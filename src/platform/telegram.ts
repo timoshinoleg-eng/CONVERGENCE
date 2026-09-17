@@ -1,24 +1,15 @@
 /**
  * Minimal typed adapter over the official `window.Telegram.WebApp` API.
  *
- * No wrapper SDK is used: the official surface is small, stable and already
- * injected by the client, so pulling in `@tma.js/*` or similar would add
- * dependencies for no behavioural gain.
- *
- * SECURITY BOUNDARY
- *
- * Only *client convenience* fields are read: viewport, safe area, theme,
- * colour scheme, start parameter, back button and capability detection.
- *
- * `initData` / `initDataUnsafe` are treated as UNTRUSTED. Nothing derived from
- * them may be used for identity, purchases, rewards, anti-cheat or competitive
- * state. Those require server-side validation of the signed `initData` against
- * the bot token, which is explicitly out of scope for this beta. See
- * `docs/TELEGRAM_READINESS_AUDIT.md` -> "Security boundary".
+ * The official bridge is loaded by `index.html`. Runtime detection remains
+ * defensive because that bridge can also be downloaded by a normal browser.
+ * `initData` / `initDataUnsafe` are UNTRUSTED client convenience data only.
  */
 
+import { applyEnvironmentToDocument } from "./dom";
 import { createLifecycleController, bindHostEvent, type LifecycleController } from "./lifecycle";
 import { resolveLaunchIntent } from "./launchIntent";
+import type { TelegramDeviceStoragePort } from "./storage";
 import type {
   BackHandler,
   HostDocument,
@@ -33,7 +24,6 @@ import type {
   ViewportMetrics,
 } from "./types";
 
-/** Structural subset of the official Telegram Mini Apps WebApp object. */
 export interface TelegramSafeAreaInset {
   top?: number;
   bottom?: number;
@@ -60,9 +50,11 @@ export interface TelegramWebApp {
   readonly viewportStableHeight?: number;
   readonly isExpanded?: boolean;
   readonly isFullscreen?: boolean;
+  readonly isActive?: boolean;
   readonly safeAreaInset?: TelegramSafeAreaInset;
   readonly contentSafeAreaInset?: TelegramSafeAreaInset;
   readonly BackButton?: TelegramBackButton;
+  readonly DeviceStorage?: TelegramDeviceStoragePort;
   ready?(): void;
   expand?(): void;
   requestFullscreen?(): void;
@@ -76,11 +68,6 @@ export interface TelegramWebApp {
   enableVerticalSwipes?(): void;
 }
 
-/**
- * Structural check. The WebView object is hostile input until proven
- * otherwise, and several clients expose a partially initialised stub before
- * `ready()`.
- */
 export function asTelegramWebApp(value: unknown): TelegramWebApp | null {
   if (typeof value !== "object" || value === null) return null;
   const candidate = value as Partial<TelegramWebApp>;
@@ -92,14 +79,23 @@ export function asTelegramWebApp(value: unknown): TelegramWebApp | null {
   return hasRuntimeMarker ? (candidate as TelegramWebApp) : null;
 }
 
-/** Reads `window.Telegram.WebApp` defensively. */
+function hasTelegramLaunchContext(hostWindow: HostWindow, webApp: TelegramWebApp): boolean {
+  const platform = typeof webApp.platform === "string" ? webApp.platform.trim().toLowerCase() : "";
+  if (platform.length > 0 && platform !== "unknown") return true;
+  if (typeof webApp.initData === "string" && webApp.initData.length > 0) return true;
+
+  const locationData = `${hostWindow.location.search}&${hostWindow.location.hash}`;
+  return /(?:^|[?&#])tgWebApp(?:Version|Platform|Data|StartParam)=/.test(locationData);
+}
+
+/** Reads `window.Telegram.WebApp` defensively without misclassifying normal web. */
 export function readTelegramWebApp(hostWindow: HostWindow): TelegramWebApp | null {
   const namespace = hostWindow.Telegram as { WebApp?: unknown } | undefined;
   if (!namespace) return null;
-  return asTelegramWebApp(namespace.WebApp);
+  const webApp = asTelegramWebApp(namespace.WebApp);
+  if (!webApp) return null;
+  return hasTelegramLaunchContext(hostWindow, webApp) ? webApp : null;
 }
-
-const ZERO_INSETS: SafeAreaInsets = { top: 0, right: 0, bottom: 0, left: 0 };
 
 function readInsets(
   primary: TelegramSafeAreaInset | undefined,
@@ -132,8 +128,6 @@ function readCapabilities(webApp: TelegramWebApp): PlatformCapabilities {
   };
   return {
     expand: typeof webApp.expand === "function",
-    // Fullscreen is a Bot API 8.0+ feature; requesting it on older clients
-    // is silently ignored, so it is capability-gated rather than assumed.
     fullscreen: typeof webApp.requestFullscreen === "function" && versioned("8.0"),
     backButton: typeof webApp.BackButton?.show === "function",
     homeScreen: typeof webApp.addToHomeScreen === "function",
@@ -160,24 +154,56 @@ export interface TelegramAdapterOptions {
   hostWindow: HostWindow;
   hostDocument: HostDocument;
   storage: PlatformStorage;
-  /**
-   * Opt-in only. Fullscreen hides the Telegram header and changes how the
-   * player minimises the Mini App, so it is left off until product decides.
-   */
   enableFullscreen?: boolean;
-  /** Injectable for tests; defaults to the shared lifecycle controller. */
   lifecycle?: LifecycleController;
   launchIntent?: LaunchIntent;
 }
 
 export function createTelegramAdapter(options: TelegramAdapterOptions): PlatformAdapter {
   const { webApp, hostWindow, hostDocument, storage } = options;
+  let active =
+    typeof webApp.isActive === "boolean"
+      ? webApp.isActive
+      : hostDocument.visibilityState !== "hidden";
 
   const lifecycle =
     options.lifecycle ??
     createLifecycleController({
-      readVisibility: () => hostDocument.visibilityState !== "hidden",
-      onVisibilityChange: (listener) => bindHostEvent(hostDocument, "visibilitychange", listener),
+      readVisibility: () => active,
+      onVisibilityChange: (listener) => {
+        const unsubscribes: Array<() => void> = [];
+        const registerTelegramLifecycle = (eventType: "activated" | "deactivated", value: boolean) => {
+          if (typeof webApp.onEvent !== "function") return;
+          const handler = () => {
+            active = value;
+            listener();
+          };
+          try {
+            webApp.onEvent(eventType, handler);
+            unsubscribes.push(() => {
+              try {
+                webApp.offEvent?.(eventType, handler);
+              } catch {
+                /* client already gone */
+              }
+            });
+          } catch {
+            /* old Telegram client: DOM fallback remains active */
+          }
+        };
+
+        registerTelegramLifecycle("activated", true);
+        registerTelegramLifecycle("deactivated", false);
+        unsubscribes.push(
+          bindHostEvent(hostDocument, "visibilitychange", () => {
+            active = hostDocument.visibilityState !== "hidden";
+            listener();
+          }),
+        );
+        return () => {
+          while (unsubscribes.length > 0) unsubscribes.pop()?.();
+        };
+      },
       onDispose: (listener) => bindHostEvent(hostWindow, "pagehide", listener),
     });
 
@@ -210,15 +236,20 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Platform
 
   function refresh(): void {
     environment = readEnvironment();
+    applyEnvironmentToDocument(hostDocument, environment);
   }
 
   const handleBack = (): void => {
     backHandler?.();
   };
 
-  // Telegram has no background event, so visibility + pagehide is the only
-  // reliable resume/background source inside the WebView.
-  for (const eventType of ["viewportChanged", "themeChanged", "fullscreenChanged"]) {
+  for (const eventType of [
+    "viewportChanged",
+    "themeChanged",
+    "fullscreenChanged",
+    "safeAreaChanged",
+    "contentSafeAreaChanged",
+  ]) {
     if (typeof webApp.onEvent !== "function") continue;
     try {
       webApp.onEvent(eventType, refresh);
@@ -261,12 +292,12 @@ export function createTelegramAdapter(options: TelegramAdapterOptions): Platform
       } catch {
         /* never block boot on a client API failure */
       }
-      refresh();
       try {
         webApp.expand?.();
       } catch {
-        /* non-fatal: the Mini App simply stays at its default height */
+        /* non-fatal */
       }
+      refresh();
       if (options.enableFullscreen === true && environment.capabilities.fullscreen) {
         try {
           webApp.requestFullscreen?.();
