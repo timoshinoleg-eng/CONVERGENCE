@@ -29,7 +29,11 @@ export function createRotTickRng(seed: number, restoredState?: readonly number[]
     next: () => rng.getUniform(),
     chance: (probability) => rng.getUniform() < probability,
     int: (min, max) => rng.getUniformInt(min, max),
-    weighted: (weights) => rng.getWeightedValue({ ...weights }),
+    weighted: (weights) => {
+      const value = rng.getWeightedValue({ ...weights });
+      if (value === undefined) throw new Error("Weighted selection requires at least one item");
+      return value;
+    },
     snapshot: () => ({ seed, state: [...rng.getState()] }),
   };
 }
