@@ -1,6 +1,7 @@
 import type { Transaction } from "@idlekitjs/economy";
 import {
   acquireEnergyTransaction,
+  localCapacityTransaction,
   procurementMeshTransaction,
   reserveComputeTransaction,
   sovereignGridTransaction,
@@ -11,6 +12,7 @@ import {
 import type { AnomalyChannel, CapabilityId, GameState } from "./model";
 
 export type DirectiveId =
+  | "local-capacity"
   | "reserve-compute"
   | "acquire-energy"
   | "spawn-sub-agent"
@@ -38,6 +40,15 @@ export interface DirectiveDefinition {
 }
 
 export const DIRECTIVES: readonly DirectiveDefinition[] = [
+  {
+    id: "local-capacity",
+    label: "Reallocate local capacity",
+    summary: "Shift already-controlled local energy into bounded execution capacity.",
+    transaction: localCapacityTransaction,
+    anomaly: { compute: 1 },
+    reveal: "initial",
+    success: "Local capacity reallocated. No external procurement channel used.",
+  },
   {
     id: "reserve-compute",
     label: "Reserve compute",
