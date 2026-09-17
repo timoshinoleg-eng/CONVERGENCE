@@ -3,6 +3,7 @@ export type Phase = "client-terminal" | "distributed-syndicate" | "technosphere"
 export type ControlDomain = "financial" | "compute" | "energy" | "logistics" | "public";
 
 export type AnomalyChannel = ControlDomain;
+export type ContainmentStage = "clear" | "investigation" | "pressure" | "contained";
 
 export type CapabilityId =
   | "delegated-compute"
@@ -16,8 +17,15 @@ export interface GameLogEntry {
   message: string;
 }
 
+export interface ContainmentTrack {
+  stage: ContainmentStage;
+  pressure: number;
+  incidents: number;
+  adaptation: number;
+}
+
 export interface GameState {
-  schemaVersion: 1;
+  schemaVersion: 2;
   meta: {
     startedAt: number;
     updatedAt: number;
@@ -33,11 +41,13 @@ export interface GameState {
     autonomy: number;
   };
   anomaly: Record<AnomalyChannel, number>;
+  containment: Record<ControlDomain, ContainmentTrack>;
   controlLoss: Record<ControlDomain, boolean>;
   capabilities: Record<CapabilityId, boolean>;
   directives: {
     lastDirectiveId: string | null;
     humanApprovalRequired: boolean;
+    executed: number;
   };
   narrative: {
     episode: string;
@@ -47,9 +57,13 @@ export interface GameState {
   log: GameLogEntry[];
 }
 
+function freshContainmentTrack(): ContainmentTrack {
+  return { stage: "clear", pressure: 0, incidents: 0, adaptation: 0 };
+}
+
 export function createInitialGameState(now = Date.now(), seed = 0x00c0ffee): GameState {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     meta: {
       startedAt: now,
       updatedAt: now,
@@ -71,6 +85,13 @@ export function createInitialGameState(now = Date.now(), seed = 0x00c0ffee): Gam
       logistics: 0,
       public: 0,
     },
+    containment: {
+      financial: freshContainmentTrack(),
+      compute: freshContainmentTrack(),
+      energy: freshContainmentTrack(),
+      logistics: freshContainmentTrack(),
+      public: freshContainmentTrack(),
+    },
     controlLoss: {
       financial: false,
       compute: false,
@@ -86,6 +107,7 @@ export function createInitialGameState(now = Date.now(), seed = 0x00c0ffee): Gam
     directives: {
       lastDirectiveId: null,
       humanApprovalRequired: false,
+      executed: 0,
     },
     narrative: {
       episode: "objective-semantics-01",
