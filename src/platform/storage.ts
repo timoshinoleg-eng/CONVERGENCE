@@ -111,12 +111,46 @@ export function createPlatformStorage(options: PlatformStorageOptions): Platform
   layers.push({ kind: "memory", store: new MemoryStore() });
 
   let activeIndex = 0;
+  let queue: Promise<void> = Promise.resolve();
+
   const active = (): StorageLayer => layers[activeIndex]!;
   const degrade = (): boolean => {
     if (activeIndex >= layers.length - 1) return false;
     activeIndex += 1;
     return true;
   };
+
+  function serialized<T>(operation: () => Promise<T>): Promise<T> {
+    const run = queue.then(operation, operation);
+    queue = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
+  async function getInternal(key: string): Promise<string | null> {
+    while (true) {
+      try {
+        return await active().store.get(key);
+      } catch {
+        if (!degrade()) return null;
+      }
+    }
+  }
+
+  async function setInternal(key: string, value: string): Promise<void> {
+    while (true) {
+      try {
+        await active().store.set(key, value);
+        return;
+      } catch {
+        if (!degrade()) {
+          throw new Error("No writable persistence layer available");
+        }
+      }
+    }
+  }
 
   return {
     get kind(): StorageKind {
@@ -125,26 +159,14 @@ export function createPlatformStorage(options: PlatformStorageOptions): Platform
     get durable(): boolean {
       return active().kind !== "memory";
     },
-    async get(key: string): Promise<string | null> {
-      while (true) {
-        try {
-          return await active().store.get(key);
-        } catch {
-          if (!degrade()) return null;
-        }
-      }
+    get(key: string): Promise<string | null> {
+      // `saveSnapshot` reads A/B/active through Promise.all. Serializing here
+      // prevents one failing request from changing the shared fallback layer
+      // while sibling reads are still in flight.
+      return serialized(() => getInternal(key));
     },
-    async set(key: string, value: string): Promise<void> {
-      while (true) {
-        try {
-          await active().store.set(key, value);
-          return;
-        } catch {
-          if (!degrade()) {
-            throw new Error("No writable persistence layer available");
-          }
-        }
-      }
+    set(key: string, value: string): Promise<void> {
+      return serialized(() => setInternal(key, value));
     },
   };
 }
