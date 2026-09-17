@@ -1,7 +1,7 @@
 # `src/game/v3` — executable core of the redesign
 
 Reference implementation of the mechanics described in
-`CONVERGENCE-GAMEPLAY-REDESIGN.md` (deliverables 2, 3, 5, 6).
+[`docs/GAMEPLAY-REDESIGN.md`](../../../docs/GAMEPLAY-REDESIGN.md) (deliverables 2, 3, 5, 6).
 
 **Status:** content + pure functions only. It does **not** touch `GameState` yet and
 does not introduce a second simulation engine. Nothing in `src/game/*.ts` (v2) is

@@ -1,5 +1,5 @@
 /**
- * Exports machine-readable roadmaps from CONVERGENCE-GAMEPLAY-REDESIGN.md.
+ * Exports machine-readable roadmaps from docs/GAMEPLAY-REDESIGN.md.
  *
  * Usage: node scripts/export-units.mjs [path-to-doc]
  * Output: docs/IMPLEMENTATION-UNITS.json, docs/MECHANICS-MATRIX.csv
@@ -11,7 +11,7 @@ import { dirname, resolve } from "node:path";
 
 const docPath =
   process.argv[2] ||
-  resolve(process.cwd(), "../CONVERGENCE-GAMEPLAY-REDESIGN.md");
+  resolve(process.cwd(), "docs/GAMEPLAY-REDESIGN.md");
 const outDir = resolve(process.cwd(), "docs");
 
 const md = readFileSync(docPath, "utf8");
@@ -73,7 +73,7 @@ for (const t of tables) {
 
   for (const r of t.rows) {
     const id = clean(r.cells[idIdx]);
-    if (!/^U-\d\d$/.test(id)) continue;
+    if (!/^U-\d\d[a-z]?$/.test(id)) continue;
     units.push({
       id,
       feature: clean(r.cells[featIdx]),
@@ -95,7 +95,7 @@ for (const u of units) {
     u.deps = u.deps
       .split(/[,\s]+/)
       .map((s) => s.trim())
-      .filter((s) => /^U-\d\d$/.test(s));
+      .filter((s) => /^U-\d\d[a-z]?$/.test(s));
   }
 }
 
@@ -119,7 +119,7 @@ for (const t of tables) {
 mkdirSync(outDir, { recursive: true });
 
 const unitsOut = {
-  generated_from: "CONVERGENCE-GAMEPLAY-REDESIGN.md / DELIVERABLE 11",
+  generated_from: "docs/GAMEPLAY-REDESIGN.md / DELIVERABLE 11",
   note: "Difficulty: S <= 1 day, M = 2-4 days, L >= 1 week. Reuse: R1 retained, R2 donor adapted, R3 original.",
   count: units.length,
   units,

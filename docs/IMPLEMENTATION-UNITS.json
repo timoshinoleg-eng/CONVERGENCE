@@ -1,7 +1,7 @@
 {
-  "generated_from": "CONVERGENCE-GAMEPLAY-REDESIGN.md / DELIVERABLE 11",
+  "generated_from": "docs/GAMEPLAY-REDESIGN.md / DELIVERABLE 11",
   "note": "Difficulty: S <= 1 day, M = 2-4 days, L >= 1 week. Reuse: R1 retained, R2 donor adapted, R3 original.",
-  "count": 29,
+  "count": 30,
   "units": [
     {
       "id": "U-01",
@@ -355,15 +355,29 @@
     },
     {
       "id": "U-26",
-      "feature": "Headless fast-path for the pacing harness",
+      "feature": "Pacing harness: raise the test timeout (one-line fix)",
       "player_value": null,
       "systems": null,
       "donor": null,
       "reuse": null,
       "difficulty": "S",
       "deps": [],
-      "acceptance": "Full 5-scenario suite runs in < 2 s (currently 27.8 s and the determinism test times out at 5 s)",
+      "acceptance": "The determinism test is not broken — it needs 7.8 s against vitest's default 5 s. With --testTimeout=180000 the whole suite is 115/115 green in 28.6 s. Fix is testTimeout in vitest.config (or a per-test timeout), not a rewrite",
       "source_line": 1309
+    },
+    {
+      "id": "U-26b",
+      "feature": "*(optional)* Headless fast-path for the pacing harness",
+      "player_value": null,
+      "systems": null,
+      "donor": null,
+      "reuse": null,
+      "difficulty": "M",
+      "deps": [
+        "U-26"
+      ],
+      "acceptance": "Only if CI time matters: full 5-scenario suite in < 2 s. Defer — 28.6 s is acceptable, and U-27 needs the real harness anyway",
+      "source_line": 1310
     },
     {
       "id": "U-27",
@@ -376,8 +390,8 @@
       "deps": [
         "U-26"
       ],
-      "acceptance": "Two distinct policy scripts produce different milestone times and different final control-loss sets. This is the regression test for A10/F12",
-      "source_line": 1310
+      "acceptance": "Two distinct policy scripts produce different milestone times and different final control-loss sets. This is the regression test for A10/F12. Ship this with U-06/U-05 — it is the gate that proves the Interpretation Cycle actually changed behaviour",
+      "source_line": 1311
     },
     {
       "id": "U-28",
@@ -389,7 +403,7 @@
       "difficulty": "S",
       "deps": [],
       "acceptance": "Writes to a separate storage key; GameState checksum unchanged by telemetry; exportable as one JSON blob",
-      "source_line": 1311
+      "source_line": 1312
     },
     {
       "id": "U-29",
@@ -403,7 +417,7 @@
         "U-10"
       ],
       "acceptance": "One promoted bottleneck at top; all other panels demoted; same data",
-      "source_line": 1312
+      "source_line": 1313
     }
   ]
 }
