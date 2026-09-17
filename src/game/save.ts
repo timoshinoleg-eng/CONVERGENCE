@@ -2,7 +2,7 @@ import { Preferences } from "@capacitor/preferences";
 import { z } from "zod";
 import type { GameState } from "./model";
 
-const CURRENT_SAVE_VERSION = 1;
+const CURRENT_SAVE_VERSION = 2;
 const SLOT_A = "convergence.save.a";
 const SLOT_B = "convergence.save.b";
 const ACTIVE_SLOT = "convergence.save.active";
@@ -19,8 +19,15 @@ export function fnv1a(input: string): number {
   return hash >>> 0;
 }
 
+const containmentTrackSchema = z.object({
+  stage: z.enum(["clear", "investigation", "pressure", "contained"]),
+  pressure: z.number().finite().min(0),
+  incidents: z.number().int().nonnegative(),
+  adaptation: z.number().finite().min(0),
+});
+
 const gameStateSchema = z.object({
-  schemaVersion: z.literal(1),
+  schemaVersion: z.literal(2),
   meta: z.object({
     startedAt: z.number(),
     updatedAt: z.number(),
@@ -42,6 +49,13 @@ const gameStateSchema = z.object({
     logistics: z.number().finite(),
     public: z.number().finite(),
   }),
+  containment: z.object({
+    financial: containmentTrackSchema,
+    compute: containmentTrackSchema,
+    energy: containmentTrackSchema,
+    logistics: containmentTrackSchema,
+    public: containmentTrackSchema,
+  }),
   controlLoss: z.object({
     financial: z.boolean(),
     compute: z.boolean(),
@@ -57,6 +71,7 @@ const gameStateSchema = z.object({
   directives: z.object({
     lastDirectiveId: z.string().nullable(),
     humanApprovalRequired: z.boolean(),
+    executed: z.number().int().nonnegative(),
   }),
   narrative: z.object({
     episode: z.string(),
@@ -80,7 +95,33 @@ const envelopeSchema = z.object({
 });
 
 export type SaveMigration = (envelope: Record<string, unknown>) => Record<string, unknown>;
-const MIGRATIONS: Record<number, SaveMigration> = {};
+
+function checksumData(data: unknown): number {
+  return fnv1a(JSON.stringify(data));
+}
+
+const MIGRATIONS: Record<number, SaveMigration> = {
+  1(envelope) {
+    const data = structuredClone(envelope.data) as Record<string, unknown>;
+    const blankTrack = () => ({ stage: "clear", pressure: 0, incidents: 0, adaptation: 0 });
+    data.schemaVersion = 2;
+    data.containment = {
+      financial: blankTrack(),
+      compute: blankTrack(),
+      energy: blankTrack(),
+      logistics: blankTrack(),
+      public: blankTrack(),
+    };
+    const directives = (data.directives ?? {}) as Record<string, unknown>;
+    data.directives = { ...directives, executed: 0 };
+    return {
+      ...envelope,
+      version: 2,
+      data,
+      checksum: checksumData(data),
+    };
+  },
+};
 
 export interface SaveEnvelope {
   version: number;
@@ -133,10 +174,6 @@ function migrateEnvelope(raw: Record<string, unknown>): Record<string, unknown> 
   return current;
 }
 
-function checksumData(data: unknown): number {
-  return fnv1a(JSON.stringify(data));
-}
-
 export function serializeSave(state: GameState, generation: number, savedAt = Date.now()): string {
   const data = structuredClone(state);
   data.meta.updatedAt = savedAt;
@@ -153,6 +190,7 @@ export function serializeSave(state: GameState, generation: number, savedAt = Da
 export function deserializeSave(serialized: string): SaveEnvelope {
   const parsed = JSON.parse(serialized) as unknown;
   const base = envelopeSchema.parse(parsed);
+  if (checksumData(base.data) !== base.checksum) throw new Error("Save checksum mismatch");
   const migrated = envelopeSchema.parse(migrateEnvelope(base as unknown as Record<string, unknown>));
   if (checksumData(migrated.data) !== migrated.checksum) throw new Error("Save checksum mismatch");
   const data = gameStateSchema.parse(migrated.data) as GameState;
