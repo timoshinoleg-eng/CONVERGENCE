@@ -85,7 +85,17 @@ function hasTelegramLaunchContext(hostWindow: HostWindow, webApp: TelegramWebApp
   if (typeof webApp.initData === "string" && webApp.initData.length > 0) return true;
 
   const locationData = `${hostWindow.location.search}&${hostWindow.location.hash}`;
-  return /(?:^|[?&#])tgWebApp(?:Version|Platform|Data|StartParam)=/.test(locationData);
+  if (/(?:^|[?&#])tgWebApp(?:Version|Platform|Data|StartParam)=/.test(locationData)) return true;
+
+  // Test/legacy hosts may expose a real WebApp surface without `platform`.
+  // The official bridge outside Telegram sets `platform = "unknown"`, which
+  // was intentionally rejected above, so this fallback does not turn a normal
+  // browser into Telegram just because index.html loaded the bridge.
+  return (
+    webApp.platform === undefined &&
+    typeof webApp.version === "string" &&
+    typeof webApp.ready === "function"
+  );
 }
 
 /** Reads `window.Telegram.WebApp` defensively without misclassifying normal web. */
