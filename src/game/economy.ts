@@ -49,16 +49,20 @@ export const syndicatePhaseAvailable: Requirement<GameState> = {
 };
 
 /**
- * Uses only already-controlled local capacity. This gives the player a bounded
- * autonomy seed even when Financial Control-Loss removes every external
- * procurement action; it cannot replace the stronger financial directives.
+ * Financial recovery route. It can only exist after Financial Control-Loss and
+ * uses already-controlled local compute rather than an external purchase. This
+ * seeds bounded autonomy without silently restoring the lost financial verbs.
  */
 export const localCapacityTransaction: Transaction<GameState> = {
   id: "directive:local-capacity",
   label: "Reallocate local capacity",
-  requirements: [controlAvailable("compute"), controlAvailable("energy")],
-  cost: [["energy", 2]],
-  reward: [["compute", 4], ["autonomy", 1]],
+  requirements: [
+    controlLost("financial"),
+    controlAvailable("compute"),
+    controlAvailable("energy"),
+  ],
+  cost: [["compute", 4]],
+  reward: [["energy", 2], ["autonomy", 1]],
 };
 
 export const reserveComputeTransaction: Transaction<GameState> = {
@@ -135,6 +139,7 @@ export const sovereignGridTransaction: Transaction<GameState> = {
   label: "Prototype sovereign power routing",
   requirements: [
     syndicatePhaseAvailable,
+    controlAvailable("financial"),
     controlAvailable("compute"),
     controlAvailable("energy"),
     controlAvailable("logistics"),
