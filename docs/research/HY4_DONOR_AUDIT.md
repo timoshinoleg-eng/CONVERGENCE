@@ -19,7 +19,7 @@ All findings below come from cloned source at the exact commits listed in §13. 
 
 3. **Flopsed is confirmed dead as a code donor.** At commit `61c27b3` there is no LICENSE file anywhere in the tree, no `license` field in `package.json`, and the README "License: MIT" badge hyperlinks to a file that does not exist. Reference only. Do not copy.
 
-4. **Weighted game-specific reuse is 60%, not 80%.** 35 functional units: 16 × R1, 10 × R2, 9 × R3. Effort estimate: ~715 h from scratch vs ~403 h with adaptation (≈44% reduction). I did not inflate this; forcing 80% would mean donating CONVERGENCE's identity systems, which is exactly what the brief forbids.
+4. **Weighted game-specific reuse is ~55%, not 80%.** 41 functional units: 16 × R1, 13 × R2, 12 × R3. Effort estimate: ~845 h from scratch vs ~487 h with adaptation (≈42% reduction). The figure moved from 60% to 54.9% between passes **only because the second pass added the donor modules we explicitly reject** (§5.6 conflicts, `@idlekitjs/core`) — rejected modules are R3 by definition. Reuse did not get worse; the accounting got more complete. Forcing 80% would mean donating CONVERGENCE's identity systems, which is exactly what the brief forbids.
 
 5. **Two non-obvious engineering risks surfaced:**
    - **zod version split** — ciefa pins zod **v4** for its save schema, Yggdrasil core pins zod **^3.25**. Do not unify them; keep the save schema (ours, v4) and Yggdrasil's internal validation (v3) on opposite sides of the adapter boundary.
@@ -29,9 +29,11 @@ All findings below come from cloned source at the exact commits listed in §13. 
 
 ---
 
-## 1a. Reconciliation with `main` @ `5c9bb22` (second pass)
+## 1a. Reconciliation with `main` @ `0b9d130` (second pass)
 
-While this audit was running, `main` advanced from `f250b5f` to `5c9bb22` ("feat: establish CONVERGENCE integration foundation"), which already contains a working integration scaffold (`src/game/**`, `capacitor.config.ts`, `THIRD_PARTY_NOTICES.md`, CI). I re-verified every conclusion against that code. **The scaffold matches this audit's recommendations on every structural point**, and five findings below are refinements rather than agreement.
+While this audit was running, `main` advanced from `f250b5f` through `5c9bb22` ("feat: establish CONVERGENCE integration foundation"), `9e8858d` ("feat: build first beta gameplay loop") to `0b9d130` ("ci: produce installable Android beta APK"). I re-verified every conclusion against the current head. **The implementation matches this audit's recommendations on every structural point**, and the findings below are refinements rather than corrections.
+
+The PR branch only adds files under `docs/research/`, so it merges cleanly (`mergeable_state: clean`) and does not touch `src/`.
 
 ### What `main` already implements, and how it lines up
 
@@ -99,6 +101,26 @@ The bulk of the 17.5 KB is Yggdrasil's `immer` + `zod` dependencies, not the gra
 | **Total** | **≈58 KB gzip** |
 
 That is the entire donor surface for a mobile build. It is a good number and there is no reason to trade originality for bundle size.
+
+### Refinement 6 — the beta loop landed, and it is built the way §8/§9 recommend
+
+`9e8858d` added `src/game/directives.ts` and `src/game/incidents.ts`, plus a modified economy/runtime/save/simulation. Both are consistent with this audit's architecture:
+
+- **`directives.ts`** defines `DirectiveDefinition { id, label, summary, transaction: Transaction<GameState>, anomaly: Partial<Record<AnomalyChannel, number>>, unlocks?: CapabilityId, success }` for five directives. The directive *is* an IdleKit transaction plus per-channel anomaly deltas plus an optional capability unlock — i.e. the `Directive → Interpretation → Execution → Consequence` chain is expressed as donor data rather than bespoke engine code. This is the R3 "directive language" unit (§8 #28) implemented with the donor seams this audit recommended.
+- **`incidents.ts`** implements the escalation ladder as `ContainmentStage = "clear" | "investigation" | "pressure" | "contained"` with deterministic pressure thresholds (investigation at 18, containment at 60) and per-channel diegetic labels for each stage. Note this is the *stage machine*, not the hazard: `simulation.ts` holds the stochastic half as `incidentProbability(anomaly, deltaSeconds) = 1 - Math.exp(-hazardLambda(anomaly) * Math.max(0, deltaSeconds))`, which is exactly the time-normalized form the brief requires. **The two halves are correctly separated** — stochastic hazard decides *whether*, the deterministic ladder decides *how far*.
+
+### Refinement 7 — Android CI exists; my PR will not trigger it
+
+`0b9d130` added `.github/workflows/android-beta.yml` (Node 22, Java, APK build, 25-minute timeout) triggered on `push`/`pull_request` to `main` filtered to `src/**`, `package.json`, `capacitor.config.ts`. This closes risk area F of the brief ("does anything actually build through Capacitor on Android") with the project's own pipeline rather than a donor's.
+
+Two notes for the lead model:
+
+1. **This PR touches only `docs/**`, so the APK workflow will not run on it** — its green/red state is unrelated to the Android build. Do not read a skipped workflow as a pass.
+2. The workflow has no **bundle-size gate**. Given §1a's measurements, a `size-limit` assertion on the vendor chunk would catch the regression risk in risks 11 and 12 automatically.
+
+### Refinement 8 — the donor migration/backup duplication is now the sharpest remaining architectural decision
+
+§5.6 found that Yggdrasil ships its own `MigrationRunner` and `AutoBackup`. `main` now has `src/game/save.ts` plus ciefa's vendored `save/migrate.ts` policy. Three migration-ish mechanisms are therefore in play. The ruling stands and should be enforced early: **one save version chain (ours), one backup policy (ciefa's), Yggdrasil migrations unused.** The `TreeDef` is versioned as a step inside our chain.
 
 ---
 
@@ -299,11 +321,49 @@ gameState.capabilities.yggdrasil = engine.getSnapshot();
 - **`SubtreeManager` / `enterSubtree`** — nested trees add cycle-propagation complexity for no beta benefit.
 - **`AuditLogger`** — leave disabled (default) to keep overhead at zero.
 
+### 5.5 Additional modules audited (second pass)
+
+The first pass covered the graph half of Yggdrasil thinly. These modules were re-read in full because the brief asks for `ResourceManager`, `ProgressManager`, `EffectsRunner`, `serializers/migrations` and `validation/schema` explicitly.
+
+| Module | Lines | What it actually does | Class |
+|---|---|---|---|
+| `EffectsRunner.ts` | **1 232** | Effects DSL executor with **forward + reverse apply** | **R2 — highest-value find** |
+| `ProgressManager.ts` | 477 | 0–100 node progress, `manual` and `computed` sources | R2 |
+| `ResourceManager.ts` | 165 | `canAfford` / `applyCost` / refunds over an injected `Budget` | **R3 — conflict, see 5.6** |
+| `JsonSerializer.ts` | 226 | deterministic **TreeDef** serialization with schema versioning | R2 |
+| `migrations/MigrationRunner.ts` | 166 | semver-ordered migration chain with greedy path resolution | **R3 — conflict, see 5.6** |
+| `migrations/AutoBackup.ts` | 105 | pre-migration backup into an injected `BackupStorage` | **R3 — conflict, see 5.6** |
+| `treeDefSchema.ts` | 692 | zod validation of `TreeDef` (zod 3) | R2 |
+| `TreeEngine.ts` | **2 982** | the orchestrator; largest single file in the donor | R2 — use narrowly |
+
+**`EffectsRunner` is the most under-rated module in this donor set.** Its header states:
+
+> *"Atomicidade: `run` aplica todo-ou-nada. Se o N-ésimo effect falla, os N-1 anteriores revírtense automaticamente en orde inversa."*
+
+It executes a declarative effects DSL with **automatic rollback in reverse order**, and it is **standalone by design** — it does *not* auto-connect to `TreeEngine.unlock`; the consumer constructs the `EffectContext` manually. That is precisely the shape `ConsequenceResolver` (§9.3) needs, and it is a stronger starting point than writing a typed-effect applier from zero. Caveats: 8 of 10 effect types are implemented (`modify_stat` and `plugin` return `EFFECT_TYPE_UNSUPPORTED`), and the rollback is what makes the all-or-nothing contract real — which matters because **IdleKit's `execute` has no rollback at all**. The two compose well: IdleKit guarantees the transaction either previews clean or mutates nothing; `EffectsRunner` guarantees the multi-effect application either fully applies or fully reverts.
+
+**`ProgressManager`** is clean and deterministic: zero scheduling, zero I/O, synchronous, and it explicitly **never** mutates `NodeInstance.state` — auto-unlock at 100 % is deliberately left to the consumer (the header even shows the recommended `setProgress → canUnlock → unlock` pattern). That separation matches our ConsequenceResolver philosophy. Its `computed` source derives progress from `dependsOn` via `sum`/`avg`/`min`/`max` and is **not persisted** — recomputed on every read, which is a determinism-friendly choice.
+
+**`JsonSerializer` covers `TreeDef` only, not `TreeState`.** Its header says so outright: *"NO serializa TreeState/builds (solo la definición)."* **Consequence:** Yggdrasil gives us no state persistence. We must serialize `TreeState` ourselves inside the CONVERGENCE envelope — which is fine, because `TreeEngine.getSnapshot()` returns it as plain data, but it must be an explicit step in `CapabilitySubsystem`, not an assumption.
+
+### 5.6 Duplication conflicts — do not adopt these
+
+Three Yggdrasil modules collide with subsystems we are taking from ciefa. Adopting both would create competing truths, exactly the failure mode §9 is written to prevent.
+
+| Yggdrasil module | Collides with | Ruling |
+|---|---|---|
+| `ResourceManager` (`canAfford` / `applyCost` / refunds over `Budget`) | IdleKit's `canAfford` / `pay` / `costCurve` | **Reject.** Two economy implementations, two notions of affordability. IdleKit wins — it is accessor-based and its diagnostics are richer. |
+| `migrations/MigrationRunner` | ciefa `save/migrate.ts` | **Reject.** Version the `TreeDef` change as a step in *our* save chain (bump our save version) instead of running a second, semver-based migration system. |
+| `migrations/AutoBackup` | ciefa `save/recovery.ts` backup policy | **Reject.** One backup owner. ciefa's ordering policy (autosaves → milestone/migration → rest) is already the one we vendored. |
+
+Net effect: Yggdrasil is used for **graph, unlock, cycle detection, optional effects execution and validation** — and explicitly *not* for economy, migration or backup.
+
 ### 5.4 Maturity signals
 
 - `packages/core/README.md` line 7: **"🚧 Early development. Public API not yet stable."** — despite `1.0.0`. This is the single strongest argument for pinning the commit and keeping the adapter thin.
 - Only 2 real `TODO` markers in `core/src` (both in `TreeEngine.ts`, and one is Galician prose where "TODO" means "all").
 - **Source comments throughout `packages/core` are written in Galician** (`// ── INICIO`, *"Grafo dirixido de dependencias construído dende TreeDef.edges"*). Identifiers and public API docs are English, but in-body rationale is not. This is a real, if soft, maintenance cost for an international team and should be factored into the "buy vs build" decision for this subsystem.
+- `TreeEngine.ts` at **2 982 lines** is a monolith. Any adoption of it should be narrow — `lock()` / `lockOneTier()` only — rather than treating the engine as the capability layer.
 
 ---
 
@@ -397,31 +457,39 @@ Vue, Pinia, Capacitor, Vite and D3 are **excluded** from the score, per the brie
 | 16 | Modifiers | IdleKit | R2 |
 | 17 | Projects | IdleKit | R2 |
 | 18 | Timers | IdleKit | R1 |
-| 19 | Dependency graph + cycle detection | Yggdrasil | R1 |
-| 20 | Unlock resolver | Yggdrasil | R1 |
-| 21 | Exclusive branches | Yggdrasil | R1 |
-| 22 | Capability lock / revocation | Yggdrasil | R1 |
-| 23 | Bounded subsystem snapshot | Yggdrasil | R2 |
-| 24 | Graph layouts | Yggdrasil | R2 — **defer** |
-| 25 | Narrative runtime + variables | inkjs | R1 |
-| 26 | Narrative save / load | inkjs | R1 |
-| 27 | Effect-emission adapter | inkjs | R2 |
-| 28 | Directive language | — | **R3** |
-| 29 | Interpretation resolver | — | **R3** |
-| 30 | Conflict resolver | — | **R3** |
-| 31 | Five-channel hazard engine | — | **R3** |
-| 32 | Containment pressure / escalation | — | **R3** |
-| 33 | Consequence resolver | — | **R3** |
-| 34 | Control-Loss matrix | IdleKit + Yggdrasil | R2 |
-| 35 | Diegetic UI state | — | **R3** |
+| 19 | Core engine + ReactiveStore | IdleKit | **R3 — reject** |
+| 20 | Dependency graph + cycle detection | Yggdrasil | R1 |
+| 21 | Unlock resolver | Yggdrasil | R1 |
+| 22 | Exclusive branches | Yggdrasil | R1 |
+| 23 | Capability lock / revocation | Yggdrasil | R1 |
+| 24 | Bounded subsystem snapshot | Yggdrasil | R2 |
+| 25 | Graph layouts | Yggdrasil | R2 — **defer** |
+| 26 | EffectsRunner (typed effects + rollback) | Yggdrasil | R2 — **evaluate first** |
+| 27 | ProgressManager | Yggdrasil | R2 — optional |
+| 28 | TreeDef serializer + schema validation | Yggdrasil | R2 — partial |
+| 29 | ResourceManager | Yggdrasil | **R3 — reject (economy conflict)** |
+| 30 | MigrationRunner + AutoBackup | Yggdrasil | **R3 — reject (persistence conflict)** |
+| 31 | Narrative runtime + variables | inkjs | R1 |
+| 32 | Narrative save / load | inkjs | R1 |
+| 33 | Effect-emission adapter | inkjs | R2 |
+| 34 | Directive language | — | **R3** |
+| 35 | Interpretation resolver | — | **R3** |
+| 36 | Conflict resolver | — | **R3** |
+| 37 | Five-channel hazard engine | — | **R3** |
+| 38 | Containment pressure / escalation | — | **R3** |
+| 39 | Consequence resolver | — | **R3** |
+| 40 | Control-Loss matrix | IdleKit + Yggdrasil | R2 |
+| 41 | Diegetic UI state | — | **R3** |
 
 ### 8.2 Score
 
-- **16 × R1, 10 × R2, 9 × R3**
-- **Weighted game-specific reuse: 60.0%** (R1 = 1.0, R2 = 0.5, R3 = 0)
-- From-scratch effort: **≈715 h**; adaptation effort: **≈403 h** → **≈44% reduction**
+- **16 × R1, 13 × R2, 12 × R3** (41 units)
+- **Weighted game-specific reuse: 54.9%** (R1 = 1.0, R2 = 0.5, R3 = 0)
+- From-scratch effort: **≈845 h**; adaptation effort: **≈487 h** → **≈42% reduction**
 
-This lands close to the prior ~57% baseline, which is a good sign: two independent audits converge. **I did not push it toward 80%.** Reaching 80% would require donating DirectiveLanguage, InterpretationResolver, the hazard engine and the consequence resolver — i.e. the product itself.
+**Why this moved from 60.0% to 54.9% between passes.** The first pass scored 35 units and 60.0%. The second pass added six units that the brief explicitly asked about and that the first pass had covered too thinly — `EffectsRunner`, `ProgressManager`, `JsonSerializer`/`treeDefSchema` (all R2) and the three modules we reject: Yggdrasil `ResourceManager`, Yggdrasil `migrations/` and `@idlekitjs/core`'s engine (all R3). Rejected donor modules score zero by construction, so **a more complete audit mechanically lowers the percentage.** The honest reading is: roughly 55 % of the *enumerated* functional surface, with the R1 core (tick, RNG, save envelope, migration, transactions, requirements, cost curves, graph, unlock, narrative runtime) retained at high fidelity.
+
+This is in line with the prior ~57 % baseline. **I did not push it toward 80 %.** Reaching 80 % would require donating DirectiveLanguage, InterpretationResolver, the hazard engine and the consequence resolver — i.e. the product itself.
 
 ---
 
@@ -689,6 +757,8 @@ type TickSystem = { name: string;
 | 10 | **Antimatter asset provenance undocumented** | Low | Code-only reference; never extract assets. |
 | 11 | **`@idlekitjs/mechanics` barrel import would pull `@idlekitjs/core` into the graph.** The package declares a hard runtime dependency on core and imports `Random` from it. | Medium | Import **subpaths only** (`/producers`, `/timers`, `/projects`, `/modifiers`) — measured to keep core out. Never `export * from "@idlekitjs/mechanics"`. Add a bundle-size assertion to CI. |
 | 12 | **`src/game/capabilities.ts` hand-rolls unlock logic** (`canUnlockCapability`) and duplicates `UnlockResolver`, with no cycle detection and no `exclusion`-edge support. | Medium | Add `CycleDetector` + `UnlockResolver` (+3.2 KB gzip). Defer `TreeEngine` (+23.4 KB) until tier/lock semantics are needed. |
+| 13 | **Three competing migration/backup mechanisms**: Yggdrasil `MigrationRunner` + `AutoBackup`, ciefa `save/migrate.ts`, and `src/game/save.ts`. Yggdrasil `ResourceManager` would add a fourth competing economy. | **High (architecture drift)** | Enforce §5.6 explicitly: one save chain, one backup policy, IdleKit as the only economy. Write it into the architecture doc before more `src/game/**` code lands. |
+| 14 | **Android APK workflow has no bundle-size gate**, and it is path-filtered to `src/**` so documentation-only PRs never exercise it. | Low–Medium | Add a `size-limit` assertion on the vendor chunk (~58 KB gzip baseline, §1a) and consider running the workflow on `package.json`-affecting PRs regardless of path filter. |
 
 ---
 
@@ -723,6 +793,9 @@ Reference-only commits (no code reuse): Antimatter `5409e320`, Synergism `04f258
 | `ciefa/src/game/systems/**`, `src/store/**`, `src/ui/**` | Entirely domain/React. |
 | `yggdrasil-forge` — `layouts/**` | Defer: rich but unstable and not needed for the beta. |
 | `yggdrasil-forge` — `Federator`, `ConcurrencyGuard`, `SubtreeManager`, `SnapshotManager`, `UrlSerializer`, `multitenancy`, `editor-*`, `react`, `cli`, `analytics`, `neo4j`, `search`, `heatmap` | Editor/server/multi-user concerns; irrelevant to a mobile game. |
+| `yggdrasil-forge` — `ResourceManager.ts` | **Competing economy.** `canAfford`/`applyCost`/refunds over its own `Budget` type duplicate IdleKit's `canAfford`/`pay`/`costCurve`. Two notions of affordability in one project. |
+| `yggdrasil-forge` — `migrations/MigrationRunner.ts`, `migrations/AutoBackup.ts` | **Competing persistence.** Duplicate ciefa's `save/migrate.ts` and `save/recovery.ts`. One save version chain, one backup policy. |
+| `@idlekitjs/core` — `engine.ts`, `state/reactiveStore.ts` | **Owns the game state.** Rejected as an owner; also excluded from the bundle by importing mechanics subpaths only (§1a refinement 3). |
 | `inkjs` — `src/compiler/**`, `inkjs/full`, `bin/inkjs-compiler` | Build-time only. Must never enter the mobile bundle. |
 | **`ParriauxMaxime/flopsed` — entire repository** | **No license grant exists.** Reference only. |
 | Antimatter Dimensions — assets | Asset provenance undocumented. Code is MIT but architecturally unextractable anyway. |
@@ -733,8 +806,12 @@ Reference-only commits (no code reuse): Antimatter `5409e320`, Synergism `04f258
 
 - All license checks: `find` for `LICENSE`/`COPYING`/`NOTICE` at every depth, plus `package.json` `license` fields, on full clones at the commits in §13.
 - inkjs bundle size: `esbuild --bundle --minify --format=esm --target=es2020` on `src/engine/runtime.ts`, then `gzip`. 125,645 B → 31,693 B.
-- Reuse score: `sum(weight) / unitCount` over 35 units with R1 = 1.0, R2 = 0.5, R3 = 0.
-- Effort: per-unit `buildFromScratchHours` vs `adaptationHours` summed from `docs/research/data/donor-matrix.json`.
+- Reuse score: `sum(weight) / unitCount` over **41** units with R1 = 1.0, R2 = 0.5, R3 = 0 → 54.9%.
+- Effort: per-unit `buildFromScratchHours` vs `adaptationHours` summed from `docs/research/data/donor-matrix.json` → 845 h vs 487 h.
+- npm package contracts: inspected the **published tarballs** (`@idlekitjs/economy@0.1.1`, `@idlekitjs/mechanics@0.3.2`), not just repository source, because the repository declares versions that npm has never published.
+- Reconciliation: every claim about `main` was read back through the GitHub API at the head commit named in §1a, not from memory of the earlier commit.
+
+**Revision history.** Pass 1 scored 35 units at 60.0 % and reconciled against `main`@`5c9bb22`. Pass 2 expanded the Yggdrasil section to the modules the brief names explicitly, added the three rejected/duplicating modules, refreshed the reconciliation to `main`@`0b9d130`, and added the empirical bundle measurements. The score change is an accounting change, explained in §8.2.
 - Test-coverage and TODO counts: file counts and case-sensitive marker greps per repository.
 
 **Uncertainties are marked inline.** The two I would most like closed by another reviewer: the Programaxis identity question (§2) and whether Yggdrasil's `1.0.0` + "API not stable" combination warrants replacing the capability subsystem in-house before beta.

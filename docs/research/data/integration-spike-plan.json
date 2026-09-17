@@ -166,9 +166,37 @@
     "vitest"
   ],
   "deliberatelyExcluded": [
-    "@idlekitjs/core Engine and ReactiveStore - they own the state",
+    "@idlekitjs/core Engine and ReactiveStore - they own the state; keep out of the bundle by importing mechanics subpaths only",
     "@idlekitjs/storage - duplicates ciefa persistence responsibility; backends are localStorage/memory only",
+    "@idlekitjs/plugins - autosave/offline-progress duplicate ciefa policy ownership",
+    "@yggdrasil-forge ResourceManager - competing economy against IdleKit canAfford/pay/costCurve",
+    "@yggdrasil-forge migrations/MigrationRunner + AutoBackup - competing persistence against ciefa save/migrate + recovery",
     "@yggdrasil-forge/* editor, react, cli, analytics, neo4j, search, heatmap - irrelevant to a mobile game",
+    "@yggdrasil-forge TreeEngine - +23.4 KB gzip; defer until tier/lock semantics are needed",
     "inkjs /full and the compiler - build-time only, must not reach the bundle"
+  ],
+  "conflictRulings": [
+    {
+      "conflict": "Two economies",
+      "parties": ["@idlekitjs/economy canAfford/pay/costCurve", "@yggdrasil-forge ResourceManager canAfford/applyCost"],
+      "ruling": "IdleKit wins. It is accessor-based and returns richer diagnostics (TransactionFailure[]). Yggdrasil ResourceManager is unused."
+    },
+    {
+      "conflict": "Two/three persistence chains",
+      "parties": ["ciefa save/migrate.ts + save/recovery.ts", "@yggdrasil-forge MigrationRunner + AutoBackup", "src/game/save.ts"],
+      "ruling": "One save version chain (ours) and one backup policy (ciefa's). TreeDef changes are versioned as a step inside our chain. Yggdrasil migrations and AutoBackup are unused."
+    },
+    {
+      "conflict": "Who owns GameState",
+      "parties": ["plain GameState + ConvergenceRuntime", "@idlekitjs/core ReactiveStore"],
+      "ruling": "GameState wins. @idlekitjs/core is never imported; measured bundling confirms the needed mechanics subpaths do not pull it in."
+    }
+  ],
+  "evaluateFirst": [
+    {
+      "module": "@yggdrasil-forge/core EffectsRunner (1232 L)",
+      "why": "All-or-nothing typed effects with automatic reverse-order rollback - exactly what ConsequenceResolver needs, and the property IdleKit's no-rollback execute cannot provide. Standalone by design (consumer builds EffectContext manually).",
+      "caveats": "Only 8 of 10 effect types implemented (modify_stat, plugin return EFFECT_TYPE_UNSUPPORTED); API stability risk HIGH; needs StateStore/ResourceManager/UnlockResolver injected."
+    }
   ]
 }
