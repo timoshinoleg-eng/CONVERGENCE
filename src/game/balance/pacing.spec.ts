@@ -78,6 +78,7 @@ describe("beta pacing gate", () => {
   it("emits a JSON-serializable machine-readable report", () => {
     const suite = runBetaPacingSuite();
     const encoded = JSON.stringify(suite);
+    console.info(`PACING_BASELINE_JSON=${encoded}`);
     expect(JSON.parse(encoded)).toEqual(suite);
   });
 });
