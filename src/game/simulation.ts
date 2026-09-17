@@ -18,7 +18,7 @@ export interface SimulationReport {
 export function hazardLambda(anomaly: number): number {
   const normalized = Math.min(1, Math.max(0, anomaly / 100));
   if (normalized < 0.08) return 0;
-  return (normalized * normalized) / 180;
+  return (normalized * normalized) / 90;
 }
 
 export function incidentProbability(anomaly: number, deltaSeconds: number): number {
@@ -35,6 +35,7 @@ export function advanceSimulation(
   const incidents: IncidentOutcome[] = [];
 
   state.resources.compute += deltaSeconds * delegationBonus * autonomyBonus;
+  state.resources.capital += deltaSeconds * 0.12 * delegationBonus * (1 + state.resources.autonomy * 0.01);
   state.meta.tick += 1;
   state.meta.updatedAt = input.currentTime;
 
