@@ -9,7 +9,7 @@ const saveStatus = ref("");
 const storageWarning = ref(false);
 const isDev = import.meta.env.DEV;
 const buildId = (import.meta.env.VITE_BUILD_ID || "dev").slice(0, 12);
-const platformLabel = `${platform.kind.toUpperCase()} · ${platform.storage.kind}`;
+const platformLabel = computed(() => `${platform.kind.toUpperCase()} · ${platform.storage.kind}`);
 let lifecycleHandle: (() => void) | null = null;
 
 function refreshStorageWarning(): void {
@@ -23,12 +23,12 @@ const phaseTitle = computed(() => ({
 }[game.snapshot.meta.phase]));
 
 onMounted(async () => {
-  // One conceptual lifecycle for Telegram / browser / Capacitor. The adapter
-  // de-duplicates host events, so a single background->return cycle produces
-  // exactly one pause/save and exactly one offline catch-up.
   await platform.ready();
   await game.start();
   refreshStorageWarning();
+  // Subscribing immediately delivers the host's current lifecycle phase. This
+  // closes the boot race where Telegram can be minimized while ready/start are
+  // still resolving.
   lifecycleHandle = platform.onLifecycle((phase: LifecyclePhase) => {
     if (phase === "background") {
       void game.pauseForBackground().then(refreshStorageWarning);
@@ -55,11 +55,13 @@ async function saveGame(): Promise<void> {
 
 async function loadGame(): Promise<void> {
   saveStatus.value = (await game.load()) ? "VALID SAVE RESTORED" : "NO VALID SAVE FOUND";
+  refreshStorageWarning();
 }
 
 async function resetGame(): Promise<void> {
   if (!window.confirm("Reset this beta save and start from the initial objective?")) return;
   await game.resetForBeta();
+  refreshStorageWarning();
   saveStatus.value = "BETA SAVE RESET";
 }
 </script>
