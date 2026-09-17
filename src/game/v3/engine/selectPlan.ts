@@ -16,9 +16,9 @@ import type {
 } from "../types";
 
 /**
- * Interpretation variance (D5 §5.2). Early game is near-deterministic so the
+ * Interpretation variance (D5 ?5.2). Early game is near-deterministic so the
  * player can learn the rules; late game surprises them. The player opts into
- * uncertainty by raising autonomy — usually by delegating.
+ * uncertainty by raising autonomy ? usually by delegating.
  */
 export function planVariance(autonomy: number): number {
   const a = Math.min(100, Math.max(0, autonomy));
@@ -38,7 +38,7 @@ export function lossForbiddenTags(controlLoss: Record<ControlDomain, boolean>): 
 }
 
 // ---------------------------------------------------------------------------
-// Eligibility — split into independent predicates so "preferred" can be ranked
+// Eligibility ? split into independent predicates so "preferred" can be ranked
 // over a different subset than "selected".
 // ---------------------------------------------------------------------------
 
@@ -88,7 +88,7 @@ function score(plan: PlanVariant, ctx: PlanContext, rng: () => number): number {
  * Deterministic plan selection. Same (seed, tick, state) => same plan.
  *
  * `preferredPlanId` is the plan that would have won **ignoring constraint
- * words** — that is the comparison an explanation needs. It is ranked only over
+ * words** ? that is the comparison an explanation needs. It is ranked only over
  * plans that are structurally available (`requires` satisfied, not forbidden by
  * Control-Loss), so it can never name a plan that was impossible for reasons
  * unrelated to the words the player bound.
@@ -147,9 +147,16 @@ export function selectPlan(
   const deadlock = !best;
 
   let preferredUnavailableReason: PlanSelection["preferredUnavailableReason"] = "none";
-  if (!preferredFound) preferredUnavailableReason = "not-selectable";
-  else if (!deadlock && best!.id !== preferredPlanId) preferredUnavailableReason = "words";
-  else if (deadlock) preferredUnavailableReason = blockedByWords.includes(preferredPlanId) ? "words" : "not-selectable";
+  if (!preferredFound) {
+    preferredUnavailableReason = "not-selectable";
+  } else if (deadlock) {
+    preferredUnavailableReason = blockedByWords.includes(preferredPlanId) ? "words" : "not-selectable";
+  } else if (best!.id !== preferredPlanId) {
+    // The preferred plan is not the one being executed. If it was removed
+    // by a constraint word, that's the reason. Otherwise it was available
+    // but lost to another plan due to interpretation variance (RNG noise).
+    preferredUnavailableReason = blockedByWords.includes(preferredPlanId) ? "words" : "variance";
+  }
 
   return {
     directiveId: directive.id,
@@ -256,7 +263,7 @@ export function mergeEffects(...effects: readonly Effect[]): Effect {
 /**
  * Applies constraint-word multipliers. Anomaly *reductions* are never weakened.
  * `*Mul` fields are structural (scars, patterns) and are deliberately NOT
- * scaled by constraint words — "market access halved" stays halved.
+ * scaled by constraint words ? "market access halved" stays halved.
  */
 export function applyConstraintModifiers(effect: Effect, selection: PlanSelection): Effect {
   return {
@@ -343,7 +350,7 @@ export interface ResolveOptions {
 /**
  * Resolve one directive end-to-end: pick a plan, apply global conflict
  * patterns, apply constraint multipliers, collect delayed costs.
- * Pure — mutates nothing, takes an rng function.
+ * Pure ? mutates nothing, takes an rng function.
  */
 export function resolveDirective(
   directive: DirectiveDef,

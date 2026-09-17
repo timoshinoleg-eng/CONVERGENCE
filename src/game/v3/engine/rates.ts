@@ -8,7 +8,7 @@ import type { Effect, RateKey } from "../types";
  * fires repeatedly (or several patterns at once) used to be able to push
  * `latency` or `untrackedFraction` above 1, which made
  * `throughput * (1 - latency)` and `revenue * (1 - untrackedFraction)` go
- * NEGATIVE — turning production into a loss instead of saturating at zero.
+ * NEGATIVE ? turning production into a loss instead of saturating at zero.
  *
  * Every write to a rate goes through `clampRate`, so no consumer has to
  * remember to defensively clamp.
@@ -75,7 +75,7 @@ export function clampFraction(value: number): number {
 /**
  * Applies an effect to a rate table.
  *
- * Order matters and is fixed: **delta first, then multiplier** —
+ * Order matters and is fixed: **delta first, then multiplier** ?
  * `new = (old + delta) * mul`. Multipliers are structural (scars, patterns),
  * deltas are incremental (plans), and applying the multiplier to the whole
  * value keeps "market access halved" true no matter how much was added since.

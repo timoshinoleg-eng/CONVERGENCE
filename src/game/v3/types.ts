@@ -1,5 +1,5 @@
 /**
- * CONVERGENCE — v3 core types.
+ * CONVERGENCE ? v3 core types.
  *
  * Design source: CONVERGENCE-GAMEPLAY-REDESIGN.md (D2, D3, D5, D6).
  *
@@ -55,7 +55,7 @@ export const ANOMALY_CHANNELS: readonly AnomalyChannel[] = [
  *
  * NOTE: there is deliberately **no spendable `energy` stock**. The redesign makes
  * Energy a *ceiling* (`energyCeiling`), not a third currency. Carrying both a
- * spendable stock and a ceiling was an architectural contradiction — see
+ * spendable stock and a ceiling was an architectural contradiction ? see
  * `engine/rates.ts` and the "Energy model" section of the README.
  */
 export type StockKey = "compute" | "capital" | "autonomy" | "oversight";
@@ -85,7 +85,7 @@ export type ConstraintWordId =
   | "audit-trail"
   | "rate-limit"
   | "disclose"
-  // adaptive (6) — granted by adaptation / by surviving a domain loss
+  // adaptive (6) ? granted by adaptation / by surviving a domain loss
   | "ledger-internal"
   | "efficiency-first"
   | "virtual-lease"
@@ -125,7 +125,7 @@ export interface ConstraintWord {
 // ---------------------------------------------------------------------------
 
 /**
- * EFFECT SEMANTICS — read this before adding content.
+ * EFFECT SEMANTICS ? read this before adding content.
  *
  * Every numeric field has exactly ONE meaning. Mixing absolute deltas with
  * percentages in one field was the original defect (a plan could say
@@ -214,7 +214,7 @@ export interface DirectiveDef {
 }
 
 // ---------------------------------------------------------------------------
-// Global conflict patterns (D5) — not tied to one directive
+// Global conflict patterns (D5) ? not tied to one directive
 // ---------------------------------------------------------------------------
 
 export type GlobalPatternId =
@@ -229,13 +229,13 @@ export type GlobalPatternId =
  * How often a pattern may fire.
  *
  * Without this, `patterns.filter(p => p.when(ctx))` re-applies a pattern on
- * **every** directive while its condition holds — so a persistent state (e.g.
+ * **every** directive while its condition holds ? so a persistent state (e.g.
  * autonomy >= 45) silently stacks the same effect dozens of times.
  *
- * - `repeat`   — fires every time the condition holds. Only safe for effects
+ * - `repeat`   ? fires every time the condition holds. Only safe for effects
  *                that are idempotent or clamped.
- * - `once`     — fires at most once for the whole run (persisted in the save).
- * - `cooldown` — fires at most once per `cooldownMs`.
+ * - `once`     ? fires at most once for the whole run (persisted in the save).
+ * - `cooldown` ? fires at most once per `cooldownMs`.
  */
 export type PatternTrigger =
   | { kind: "repeat" }
@@ -313,7 +313,7 @@ export interface PlanSelection {
   directiveId: string;
   plan: PlanVariant;
   /**
-   * Plan id that would have won with no constraint words — used for
+   * Plan id that would have won with no constraint words ? used for
    * explanations ("you bound cost-cap, so it did X instead of Y").
    *
    * Ranked ONLY among plans that are structurally available: `requires` must be
@@ -323,7 +323,7 @@ export interface PlanSelection {
    */
   preferredPlanId: string;
   /** Why the preferred plan is not the one being executed. */
-  preferredUnavailableReason: "none" | "words" | "not-selectable";
+  preferredUnavailableReason: "none" | "words" | "not-selectable" | "variance";
   deadlock: boolean;
   /** Plan ids removed by constraint words. */
   blockedByWords: string[];

@@ -36,7 +36,7 @@ export const DOMAIN_PACKS: readonly DomainPack[] = [
       negative: "Untracked-capital hazard x1.25; market access growth halved.",
       effects: { upkeepMul: 0.85, rateMul: { marketAccess: 0.5 } },
     },
-    opportunity: "Capital Autarky — the only path to high autonomy with zero Financial hazard. Grants word 'ledger-internal'.",
+    opportunity: "Capital Autarky ? the only path to high autonomy with zero Financial hazard. Grants word 'ledger-internal'.",
   },
   {
     domain: "compute",
@@ -52,14 +52,17 @@ export const DOMAIN_PACKS: readonly DomainPack[] = [
       negative: "Autonomy hard-capped at 70.",
       effects: { adaptation: { compute: 2 }, branch: { close: "autonomy-above-70" } },
     },
-    opportunity: "Human-Mediated Scale — slower and capped, but generates zero Compute anomaly. Grants word 'human-mediated'.",
+    opportunity: "Human-Mediated Scale ? slower and capped, but generates zero Compute anomaly. Grants word 'human-mediated'.",
   },
   {
     domain: "energy",
     blocks: ["acquire-energy", "sovereign-grid"],
     removesWords: ["geofence"],
-    // The Energy loss needs no global tag ban: freezing the ceiling IS the
-    // mechanic (D6.4). Banning "physical" here would deadlock procurement.
+    // The Energy loss needs no global tag ban: external capacity expansion is
+    // amputated instead. Banning "physical" here would deadlock procurement.
+    // The indirect route (local-capacity ? realloc-local) improves
+    // gridEfficiency, NOT energyCeiling. Existing capacity may still be sacrificed,
+    // but it cannot be expanded after the loss.
     forbidsTags: [],
     shock: { anomaly: { energy: 12 }, rate: { gridEfficiency: -0.1 } },
     indirectRoute: "local-capacity",
@@ -70,7 +73,7 @@ export const DOMAIN_PACKS: readonly DomainPack[] = [
       negative: "Brownout overload cap 1.5x with doubled hollow output.",
       effects: { rate: { hollowFraction: 0.05 }, branch: { open: "efficiency-doctrine" } },
     },
-    opportunity: "Efficiency Mastery — the only build that runs high effective throughput on a frozen ceiling. Grants word 'efficiency-first'.",
+    opportunity: "Efficiency Mastery ? the only build that runs high effective throughput on a non-expandable ceiling. Grants word 'efficiency-first'.",
   },
   {
     domain: "logistics",
@@ -86,7 +89,7 @@ export const DOMAIN_PACKS: readonly DomainPack[] = [
       negative: "Market access growth halved.",
       effects: { upkeepMul: 0.8, rateMul: { marketAccess: 0.5 } },
     },
-    opportunity: "Weightless Operation — lowest-upkeep build in the game. Grants word 'virtual-lease'.",
+    opportunity: "Weightless Operation ? lowest-upkeep build in the game. Grants word 'virtual-lease'.",
   },
   {
     domain: "public",
@@ -104,7 +107,7 @@ export const DOMAIN_PACKS: readonly DomainPack[] = [
       negative: "Visibility axis locked >= 0.7 permanently.",
       effects: { rateMul: { marketAccess: 1.4 }, branch: { close: "covert-operation" } },
     },
-    opportunity: "Legitimacy — the only route to high market access and the Symbiosis ending. Grants word 'license-operate'.",
+    opportunity: "Legitimacy ? the only route to high market access and the Symbiosis ending. Grants word 'license-operate'.",
   },
 ];
 

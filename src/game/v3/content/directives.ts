@@ -323,7 +323,7 @@ export const DIRECTIVES: readonly DirectiveDef[] = [
         alignment: { cost: 0.7, oversight: 0.5 },
         tags: [],
         immediate: {
-          rate: { energyCeiling: 4, gridEfficiency: 0.02 },
+          rate: { gridEfficiency: 0.02 },
           stock: { autonomy: 1 },
           anomaly: { compute: 1 },
         },

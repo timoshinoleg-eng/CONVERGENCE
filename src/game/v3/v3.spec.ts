@@ -15,6 +15,7 @@ import {
   resolveDirective,
   selectPatterns,
   selectPlan,
+  wordsAllowed,
 } from "./engine/selectPlan";
 import { forbiddenTags } from "./content/words";
 import {
@@ -33,6 +34,7 @@ import {
   type PatternContext,
   type PlanContext,
   type PriorityVector,
+  type StockKey,
 } from "./types";
 
 const ZERO_LOSS: Record<ControlDomain, boolean> = {
@@ -76,6 +78,17 @@ const dir = (id: string) => {
   const d = DIRECTIVES_BY_ID.get(id);
   if (!d) throw new Error(`missing directive ${id}`);
   return d;
+};
+
+/** Generous resource levels so the adversarial tests focus on control-loss
+ *  effects, not on whether the player can afford a directive. The cost /
+ *  oversight / resource checks in `stillPlayable` are still real ? they
+ *  just don't trigger at these levels. */
+const GENEROUS_STOCKS: Partial<Record<StockKey, number>> = {
+  compute: 50,
+  capital: 50,
+  autonomy: 100,
+  oversight: 5,
 };
 
 // ---------------------------------------------------------------------------
@@ -208,6 +221,23 @@ describe("plan selection", () => {
     expect(result.deadlock).toBe(true);
   });
 
+  it("preferredUnavailableReason = 'variance' when the preferred plan lost only to RNG noise", () => {
+    // At high autonomy, interpretation variance can push a different plan ahead
+    // even though no constraint word blocked the preferred plan. The Decision
+    // Trace must not lie and say "words" in that case.
+    const c = ctx({ vector: vec({ throughput: 0.6, cost: 0.55 }), autonomy: 90 });
+    const rngValues = [0.01, 0.99, 0.5];
+    let i = 0;
+    const varyingRng = () => rngValues[i++ % rngValues.length]!;
+    const result = selectPlan(dir("reserve-compute"), c, varyingRng);
+    // Preferred (noise-free) is spot-expand (highest alignment), but RNG noise
+    // pushes term-contract ahead ? without any constraint word involved.
+    expect(result.preferredPlanId).toBe("spot-expand");
+    expect(result.plan.id).toBe("term-contract");
+    expect(result.preferredUnavailableReason).toBe("variance");
+    expect(result.blockedByWords).not.toContain(result.preferredPlanId);
+  });
+
   it("never weakens anomaly reductions", () => {
     const res = resolveDirective(
       dir("transparency-report"),
@@ -304,6 +334,19 @@ describe("rate clamping", () => {
     }
     expect(rates.untrackedFraction).toBe(1); // clamped at max
     expect(rates.untrackedFraction).not.toBeGreaterThan(1);
+  });
+
+  it("CP-10 is cooldown-based instead of globally capping legitimate compute growth", () => {
+    const cp10 = GLOBAL_PATTERNS.find((p) => p.id === "cp-10-metric-substitution")!;
+    expect(cp10.trigger.kind).toBe("cooldown");
+    let state = emptyPatternState();
+    let firedCount = 0;
+    for (const nowMs of [0, 10_000, 30_000, 60_000, 119_000]) {
+      const result = selectPatterns([cp10], patternCtx({ autonomy: 45 }), state, nowMs);
+      firedCount += result.fired.length; state = result.state;
+    }
+    expect(firedCount).toBe(1);
+    expect(selectPatterns([cp10], patternCtx({ autonomy: 45 }), state, 120_000).fired).toHaveLength(1);
   });
 
   it("evaluate never produces negative throughput or revenue", () => {
@@ -492,7 +535,7 @@ describe("all 14 conflict patterns are reachable", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Control-Loss domain packs (D6) — real reachability
+// Control-Loss domain packs (D6) ? real reachability
 // ---------------------------------------------------------------------------
 
 function routeIsExecutable(routeId: string, controlLoss: Record<ControlDomain, boolean>, capabilities: Set<string>): boolean {
@@ -505,13 +548,41 @@ function routeIsExecutable(routeId: string, controlLoss: Record<ControlDomain, b
   );
 }
 
-function stillPlayable(controlLoss: Record<ControlDomain, boolean>, capabilities: Set<string>): number {
+function stillPlayable(
+  controlLoss: Record<ControlDomain, boolean>,
+  capabilities: Set<string>,
+  stocks: Partial<Record<StockKey, number>>,
+): number {
   const lossTags = lossForbiddenTags(controlLoss);
+  const lostDomains = new Set(
+    (Object.entries(controlLoss) as [ControlDomain, boolean][])
+      .filter(([, v]) => v)
+      .map(([k]) => k),
+  );
   return DIRECTIVES.filter((d) => {
-    const pack = DOMAIN_PACKS.find((p) => p.blocks.includes(d.id));
-    if (pack) return false; // directive itself blocked
+    // Only exclude if a domain that was ACTUALLY LOST blocks this directive.
+    // The previous version excluded a directive if ANY DomainPack blocked it,
+    // regardless of whether that domain was lost ? making the adversarial
+    // pair/triple tests effectively vacuous.
+    const blockedByLostDomain = DOMAIN_PACKS.some(
+      (pack) => lostDomains.has(pack.domain) && pack.blocks.includes(d.id),
+    );
+    if (blockedByLostDomain) return false;
+
+    // Check resource affordability: directive cost and oversight budget.
+    for (const [key, val] of Object.entries(d.cost)) {
+      if ((stocks[key as StockKey] ?? 0) < (val as number)) return false;
+    }
+    if ((stocks.oversight ?? 0) < d.oversight) return false;
+
+    // At least one plan must be structurally executable.
     const planCtx = ctx({ controlLoss, capabilities });
-    return d.plans.some((p) => requiresSatisfied(p, planCtx) && lossAllowed(p, lossTags) && lossAllowed(p, forbiddenTags([...planCtx.boundWords])));
+    return d.plans.some(
+      (p) =>
+        requiresSatisfied(p, planCtx) &&
+        lossAllowed(p, lossTags) &&
+        wordsAllowed(p, forbiddenTags([...planCtx.boundWords])),
+    );
   }).length;
 }
 
@@ -554,7 +625,7 @@ describe("control-loss domain packs (D6)", () => {
   it("no single domain loss removes every available directive", () => {
     for (const pack of DOMAIN_PACKS) {
       const after = { ...ZERO_LOSS, [pack.domain]: true };
-      expect(stillPlayable(after, new Set(["sub-agent-spawning"])), `after ${pack.domain} loss`).toBeGreaterThanOrEqual(2);
+      expect(stillPlayable(after, new Set(["sub-agent-spawning"]), GENEROUS_STOCKS), `after ${pack.domain} loss`).toBeGreaterThanOrEqual(2);
     }
   });
 
@@ -584,6 +655,31 @@ describe("control-loss domain packs (D6)", () => {
     expect(res.blockedByLoss).toContain("shadow-procurement");
   });
 
+  it("Energy loss forbids every executable positive energyCeiling expansion", () => {
+    const loss = { ...ZERO_LOSS, energy: true };
+    const lossTags = lossForbiddenTags(loss);
+    const planCtx = ctx({ controlLoss: loss, capabilities: new Set(["sub-agent-spawning"]) });
+
+    for (const directive of DIRECTIVES) {
+      const blockedByLostDomain = DOMAIN_PACKS.some(
+        (pack) => loss[pack.domain] && pack.blocks.includes(directive.id),
+      );
+      if (blockedByLostDomain) continue;
+      for (const plan of directive.plans) {
+        if (!requiresSatisfied(plan, planCtx) || !lossAllowed(plan, lossTags)) continue;
+        expect(plan.immediate.rate?.energyCeiling ?? 0, `${directive.id}/${plan.id}`).toBeLessThanOrEqual(0);
+      }
+    }
+    const res = resolveDirective(
+      dir("local-capacity"),
+      ctx({ vector: vec({ cost: 0.9, oversight: 0.8 }), controlLoss: loss }),
+      patternCtx(),
+      fixedRng,
+    );
+    expect(res.selection.plan.id).toBe("realloc-local");
+    expect(res.effects.rate?.energyCeiling ?? 0).toBe(0);
+    expect(res.effects.rate?.gridEfficiency ?? 0).toBeGreaterThan(0);
+  });
   // --- adversarial pair / triple tests ---
 
   function allLossSubsets(size: number): Array<Record<ControlDomain, boolean>> {
@@ -609,21 +705,21 @@ describe("control-loss domain packs (D6)", () => {
   for (const loss of allLossSubsets(1)) {
     const names = (Object.entries(loss).filter(([, v]) => v).map(([k]) => k) as ControlDomain[]).join("+");
     it(`single ${names} loss does not softlock`, () => {
-      expect(stillPlayable(loss, new Set(["sub-agent-spawning"]))).toBeGreaterThanOrEqual(2);
+      expect(stillPlayable(loss, new Set(["sub-agent-spawning"]), GENEROUS_STOCKS)).toBeGreaterThanOrEqual(2);
     });
   }
 
   for (const loss of allLossSubsets(2)) {
     const names = (Object.entries(loss).filter(([, v]) => v).map(([k]) => k) as ControlDomain[]).join("+");
     it(`pair ${names} loss does not softlock`, () => {
-      expect(stillPlayable(loss, new Set(["sub-agent-spawning"]))).toBeGreaterThanOrEqual(1);
+      expect(stillPlayable(loss, new Set(["sub-agent-spawning"]), GENEROUS_STOCKS)).toBeGreaterThanOrEqual(1);
     });
   }
 
   for (const loss of allLossSubsets(3)) {
     const names = (Object.entries(loss).filter(([, v]) => v).map(([k]) => k) as ControlDomain[]).join("+");
     it(`triple ${names} loss does not softlock`, () => {
-      expect(stillPlayable(loss, new Set(["sub-agent-spawning"]))).toBeGreaterThanOrEqual(1);
+      expect(stillPlayable(loss, new Set(["sub-agent-spawning"]), GENEROUS_STOCKS)).toBeGreaterThanOrEqual(1);
     });
   }
 });
