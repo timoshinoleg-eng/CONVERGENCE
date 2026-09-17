@@ -84,11 +84,8 @@ export class TelegramDeviceStore implements KeyValueStore {
 }
 
 export interface PlatformStorageOptions {
-  /** True when running inside a real Capacitor native WebView. */
   native: boolean;
-  /** Telegram Bot API 9.0+ DeviceStorage when available. */
   telegramDeviceStorage?: TelegramDeviceStoragePort | null;
-  /** Test seam. */
   preferences?: KeyValueStore;
 }
 
@@ -114,7 +111,7 @@ export function createPlatformStorage(options: PlatformStorageOptions): Platform
   layers.push({ kind: "memory", store: new MemoryStore() });
 
   let activeIndex = 0;
-  const active = (): StorageLayer => layers[activeIndex];
+  const active = (): StorageLayer => layers[activeIndex]!;
   const degrade = (): boolean => {
     if (activeIndex >= layers.length - 1) return false;
     activeIndex += 1;
@@ -143,11 +140,7 @@ export function createPlatformStorage(options: PlatformStorageOptions): Platform
           await active().store.set(key, value);
           return;
         } catch {
-          // Retry the SAME write in the next layer. This is essential because
-          // saveSnapshot immediately verifies the value it just persisted.
           if (!degrade()) {
-            // MemoryStore is the final layer and should not throw, but keep the
-            // contract explicit if a custom test store violates that premise.
             throw new Error("No writable persistence layer available");
           }
         }
