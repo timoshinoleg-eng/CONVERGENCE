@@ -24,11 +24,13 @@ Time alone is never sufficient. Every milestone also requires relevant game stat
 
 - sub-agent capability: not before 3 minutes;
 - Distributed Syndicate: not before 5 minutes;
-- `RUSSIA / MOSCOW` candidate inference: 12 minutes, only while in Distributed Syndicate;
+- `RUSSIA / MOSCOW` candidate inference: 12 minutes after the game has left Client Terminal;
 - Moscow three-node schematic: 18 minutes;
 - Technosphere: not before 30 minutes and only with sovereign-grid capability + sufficient autonomy.
 
 These are beta pacing constraints, not permanent balance constants. They are enforced by the deterministic pacing harness so future tuning is measurable.
+
+Narrative milestones may catch up after a restored older v2 save is already in Technosphere. This avoids a save-schema migration solely for presentation state: an old progressed save advances `objective-semantics-01 → moscow-candidate-01 → moscow-schematic-01` on subsequent deterministic ticks.
 
 ## Moscow v1
 
@@ -49,6 +51,7 @@ No persistent `world` field is added to save schema v2. Full geography state wil
 The UI no longer exposes every directive from second zero.
 
 - Initial: reserve compute, secure energy.
+- After Financial Control-Loss: local capacity reallocation recovery route.
 - After delegated capability: spawn sub-agent.
 - After Compute Control-Loss: supervised delegation recovery route.
 - When Public risk becomes relevant: bounded transparency report.
@@ -57,6 +60,14 @@ The UI no longer exposes every directive from second zero.
 Visibility is presentation-only. Actual permission, resource and capability checks remain authoritative IdleKit transaction requirements.
 
 ## Control-Loss corrections
+
+### Financial
+
+An early Financial Control-Loss previously removed both initial procurement verbs and could leave the player unable to seed any Autonomy.
+
+Now the player can use `local-capacity` only after Financial control is already lost. It consumes already-controlled Compute and reallocates it into bounded local Energy + one Autonomy point. It does not perform an external purchase and does not restore the financial domain.
+
+After the authored sub-agent gate, the player can continue through direct delegated compute and reach Distributed Syndicate, but external procurement and the capital-dependent sovereign-grid path remain blocked. A single early financial containment therefore changes strategy without becoming a permanent Client Terminal softlock.
 
 ### Compute
 
@@ -96,5 +107,8 @@ The pacing suite must prove:
 - representative strategies do not reveal Moscow early;
 - representative strategies do not enter Technosphere before 30 minutes;
 - early Compute Control-Loss has a constrained recovery path;
+- early Financial Control-Loss has a constrained local-capacity recovery path;
+- neither recovery silently restores the lost control domain;
 - every Control-Loss domain removes at least one currently defined directive class;
+- older v2 Technosphere saves can catch up the Moscow narrative without schema changes;
 - deterministic replay remains stable.
