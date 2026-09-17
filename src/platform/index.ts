@@ -1,16 +1,13 @@
 /**
  * Platform boundary entry point.
  *
- * Detection order matters: a Telegram WebView is still a browser, and a
- * Capacitor Android WebView can also be a browser. Telegram is checked first
- * because it is the strictest environment (its own chrome, insets and
- * lifecycle), then native Capacitor, then plain browser as the fallback.
- *
- * Nothing telegram-specific is imported by `src/game/**`. The core only ever
- * sees the `KeyValueStore` contract and pure lifecycle transitions.
+ * Detection order matters: Telegram first, then native Capacitor, then browser.
+ * The official Telegram bridge is loaded from index.html, but detection still
+ * requires genuine Telegram launch context so ordinary browsers remain web.
  */
 
 import { App as CapacitorApp } from "@capacitor/app";
+import { Capacitor } from "@capacitor/core";
 import { createBrowserAdapter } from "./browser";
 import { createCapacitorAdapter, type CapacitorAppPort } from "./capacitor";
 import { applyEnvironmentToDocument } from "./dom";
@@ -27,7 +24,12 @@ import type {
 export * from "./types";
 export { parseLaunchIntent, readLaunchParam, resolveLaunchIntent } from "./launchIntent";
 export { createLifecycleController } from "./lifecycle";
-export { createPlatformStorage, MemoryStore, PreferencesStore } from "./storage";
+export {
+  createPlatformStorage,
+  MemoryStore,
+  PreferencesStore,
+  TelegramDeviceStore,
+} from "./storage";
 export { asTelegramWebApp, readTelegramWebApp, type TelegramWebApp } from "./telegram";
 export { applyEnvironmentToDocument, CSS_VARIABLES } from "./dom";
 
@@ -53,7 +55,7 @@ function defaultHostDocument(): HostDocument {
 
 function detectNative(): boolean {
   try {
-    return false;
+    return Capacitor.isNativePlatform();
   } catch {
     return false;
   }
@@ -72,9 +74,14 @@ export function createPlatformAdapter(options: CreatePlatformOptions = {}): Plat
   const hostWindow = options.hostWindow ?? defaultHostWindow();
   const hostDocument = options.hostDocument ?? defaultHostDocument();
   const native = options.native ?? detectNative();
-  const storage = options.storage ?? createPlatformStorage({ native });
-
   const webApp = readTelegramWebApp(hostWindow);
+  const storage =
+    options.storage ??
+    createPlatformStorage({
+      native,
+      telegramDeviceStorage: webApp?.DeviceStorage ?? null,
+    });
+
   let adapter: PlatformAdapter;
   if (webApp) {
     adapter = createTelegramAdapter({
@@ -89,14 +96,15 @@ export function createPlatformAdapter(options: CreatePlatformOptions = {}): Plat
       hostWindow,
       hostDocument,
       storage,
-      app: options.capacitorApp === undefined ? (CapacitorApp as unknown as CapacitorAppPort) : options.capacitorApp,
+      app:
+        options.capacitorApp === undefined
+          ? (CapacitorApp as unknown as CapacitorAppPort)
+          : options.capacitorApp,
     });
   } else {
     adapter = createBrowserAdapter({ hostWindow, hostDocument, storage });
   }
 
-  // Publish safe-area / viewport variables immediately, before first paint of
-  // the shell, so Telegram never renders the terminal behind its own chrome.
   applyEnvironmentToDocument(hostDocument, adapter.getEnvironment());
   return adapter;
 }
