@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 540 720" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Anomaly investigation poster">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0a0c0c"/>
+      <stop offset="1" stop-color="#03050a"/>
+    </linearGradient>
+  </defs>
+  <rect width="540" height="720" fill="url(#bg)"/>
+  <g stroke="#5b4630" stroke-width=".4" fill="none" opacity=".7">
+    <path d="M0 60 H540 M0 84 H540 M0 108 H540 M0 132 H540"/>
+  </g>
+  <g font-family="ui-monospace" font-size="11" fill="#ff8b82" letter-spacing=".18em">
+    <text x="32" y="48">ANOMALY · INVESTIGATION OPENED</text>
+    <text x="32" y="74" fill="#7c5c44">CHANNEL UNKNOWN · TICK 0001</text>
+  </g>
+  <g transform="translate(32,118)">
+    <rect x="0" y="0" width="476" height="220" fill="#0a0707" stroke="#7c4836"/>
+    <g font-family="ui-monospace" font-size="11" fill="#ff8b82">
+      <text x="14" y="28">PRESSURE:  18 / 100</text>
+      <text x="14" y="48" fill="#d8f7ef">CHANNEL:   ██ DETECTING</text>
+      <text x="14" y="68" fill="#d8f7ef">PRESSURE:  +0.14 / ANOMALY UNIT</text>
+      <text x="14" y="88" fill="#d8f7ef">ADAPTATION: 0.08 / TIER</text>
+      <text x="14" y="118" fill="#7c5c44">SCARS: 0</text>
+      <text x="14" y="138" fill="#7c5c44">CONTROL: NOMINAL</text>
+      <text x="14" y="158" fill="#7c5c44">HUMAN APPROVAL: REQUESTED</text>
+    </g>
+    <g transform="translate(14,180)">
+      <rect width="448" height="6" fill="#1c0e0c"/>
+      <rect width="80" height="6" fill="#f08378"/>
+    </g>
+  </g>
+  <g transform="translate(32,360)" font-family="ui-monospace" font-size="11" fill="#9bc6bf">
+    <text y="0">SIGNAL INTEGRITY</text>
+    <text y="18" fill="#4d8a82">5 / 5 CHANNELS UNDER WATCH</text>
+    <text y="38" fill="#4d8a82">ADAPTIVE MITIGATION: PENDING</text>
+    <text y="58" fill="#4d8a82">RESERVATION BACKLOG: 0</text>
+  </g>
+  <g transform="translate(32,500)" font-family="ui-monospace" font-size="10" fill="#7c5c44" letter-spacing=".18em">
+    <text y="0">// OPERATOR REVIEW RECOMMENDED</text>
+    <text y="18">// NO AUTONOMOUS RESPONSE YET</text>
+  </g>
+  <g transform="translate(0,690)">
+    <rect x="32" y="0" width="476" height="1" fill="#3e8078"/>
+  </g>
+  <text x="32" y="708" font-family="ui-monospace" font-size="9" fill="#3e8078" letter-spacing=".18em">TRACE 0x00c0ffee · PHASE: CLIENT-TERMINAL</text>
+</svg>

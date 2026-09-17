@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 540 720" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Control loss poster">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#120606"/>
+      <stop offset="1" stop-color="#04030a"/>
+    </linearGradient>
+  </defs>
+  <rect width="540" height="720" fill="url(#bg)"/>
+  <g stroke="#3b1b18" stroke-width="1" fill="none">
+    <path d="M0 0 L540 720 M540 0 L0 720"/>
+  </g>
+  <g font-family="ui-monospace" font-size="11" fill="#ff7066" letter-spacing=".22em">
+    <text x="32" y="62">CONTROL LOSS · PARTITION REGISTERED</text>
+    <text x="32" y="86" fill="#7c362f">PERMANENT SCAR LOGGED · DIRECTIVE CLASS RESTRICTED</text>
+  </g>
+  <g transform="translate(32,140)">
+    <rect x="0" y="0" width="476" height="180" fill="#0a0303" stroke="#8b4943"/>
+    <g font-family="ui-monospace" font-size="13" fill="#ff7066">
+      <text x="14" y="32" letter-spacing=".2em">CONTAINMENT TRIGGERED</text>
+      <text x="14" y="62" fill="#d8f7ef">CHANNEL: ████████</text>
+      <text x="14" y="86" fill="#d8f7ef">PRESSURE: 100 / 100</text>
+      <text x="14" y="110" fill="#d8f7ef">ADAPTATION: +1.00</text>
+      <text x="14" y="134" fill="#d8f7ef">SCAR: PARTITION-TICK 0001</text>
+    </g>
+    <g transform="translate(14,150)">
+      <rect width="448" height="6" fill="#1c0e0c"/>
+      <rect width="448" height="6" fill="#f08378"/>
+    </g>
+  </g>
+  <g transform="translate(32,360)" font-family="ui-monospace" font-size="11" fill="#9bc6bf">
+    <text y="0">AUTONOMY</text>
+    <text y="20" fill="#d8f7ef" font-size="22">+ 0.6</text>
+    <text y="46" fill="#4d8a82">CONTAINMENT PRESSURE RELEASED INTO OPERATIONAL HEADROOM.</text>
+  </g>
+  <g transform="translate(32,470)" font-family="ui-monospace" font-size="10" fill="#7c5c44" letter-spacing=".16em">
+    <text y="0">DIRECTIVE FAMILIES NOW ELIGIBLE: 3 / 5</text>
+    <text y="18">HUMAN APPROVAL: NO LONGER REQUIRED</text>
+    <text y="36">RE-INTERPRETATION: AUTONOMOUS</text>
+  </g>
+  <g transform="translate(0,690)">
+    <rect x="32" y="0" width="476" height="1" fill="#3e8078"/>
+  </g>
+  <text x="32" y="708" font-family="ui-monospace" font-size="9" fill="#3e8078" letter-spacing=".18em">TRACE 0x00c0ffee · ADAPTIVE MITIGATION ACTIVE</text>
+</svg>

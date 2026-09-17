@@ -1,29 +1,100 @@
+/**
+ * Patched version of `src/stores/game.ts` — adds the in-game media insert
+ * system without touching the simulation core.
+ *
+ * Integration contract:
+ *  1. `configureMedia()` resolves the tier, picks the locale, and configures
+ *     the media store once at app start. The media store receives a
+ *     `persistDismissed` callback that writes to `convergence.media`
+ *     fire-and-forget after every production dismiss.
+ *  2. `runtime.subscribe` consumes each published snapshot, diffs it against
+ *     the previous one, and forwards the resulting `MediaRequest`s to the
+ *     media store. Bootstrap / restore / reset all set a one-shot
+ *     `skipNextDiff` flag so a wholesale state swap never produces spurious
+ *     media events.
+ *  3. `save()` writes the canonical `GameState` FIRST and flushes the
+ *     ordered best-effort media-history queue AFTER. Media-storage failures
+ *     never abort canonical gameplay persistence.
+ *  4. `load()` clears the stale media queue BEFORE wholesale state swap
+ *     so a queued insert from the previous timeline cannot leak into the
+ *     restored timeline.
+ *  5. After bootstrap / load / reset, `reconcileMilestones` recovers
+ *     unseen one-shot milestones from the current snapshot.
+ */
+
 import { computed, ref } from "vue";
 import { defineStore } from "pinia";
 import { DIRECTIVES, isDirectiveRevealed, type DirectiveId } from "../game/directives";
-import { createInitialGameState, type ControlDomain } from "../game/model";
+import { createInitialGameState, type ControlDomain, type GameState } from "../game/model";
 import type { DirectiveOutcome, OfflineCatchUpReport } from "../game/runtime";
 import { ConvergenceRuntime } from "../game/runtime";
 import type { InterpretationPrompt } from "../game/narrative";
 import { loadSnapshot, saveSnapshot } from "../game/save";
 import { getPlatform } from "../platform";
 
+import { useMediaStore } from "./media";
+import {
+  detectTriggerEvents,
+  eventsToRequests,
+} from "../media/triggers";
+import {
+  createMediaDismissedPersistenceQueue,
+  loadMediaDismissed,
+} from "../media/persistence";
+import {
+  resolveMediaTier,
+  readNavigatorCapability,
+} from "../media/capability";
+import { defaultResolveInsert } from "../media/manifest";
+import { pickLocale, type MediaLocale } from "../media/i18n";
+import { createEmptyDismissedState, type MediaDismissedState, type MediaTier } from "../media/types";
+import { deriveUnseenMilestoneRequests } from "../media/reconciliation";
+
 export const useGameStore = defineStore("game", () => {
   const runtime = new ConvergenceRuntime();
-  // Storage backend is a platform decision, resolved once at the boundary.
-  // The store still only sees the core `KeyValueStore` contract.
   const persistence = getPlatform().storage;
+  const mediaPersistence = createMediaDismissedPersistenceQueue(persistence);
   const snapshot = ref(runtime.getSnapshot());
   const prompt = ref<InterpretationPrompt | null>(null);
   const lastOutcome = ref<DirectiveOutcome | null>(null);
   const offlineReport = ref<OfflineCatchUpReport | null>(null);
   const scheduler = runtime.createScheduler();
+  const media = useMediaStore();
+
   let initialized = false;
   let schedulerStarted = false;
   let periodicSave: ReturnType<typeof setInterval> | null = null;
   let deferredSave: ReturnType<typeof setTimeout> | null = null;
+  let prevSnapshot: GameState = runtime.getSnapshot();
+  let skipNextDiff = false;
+  let mediaConfigured = false;
+
+  function reconcileMilestones(state: GameState): void {
+    const dismissed = media.getDismissedState() ?? createEmptyDismissedState();
+    const requests = deriveUnseenMilestoneRequests(state, dismissed, Date.now());
+    if (requests.length > 0) media.enqueue(requests);
+  }
+
+  /**
+   * Ordered best-effort media persistence. The queue never rejects and
+   * serializes writes so an older dismiss cannot overwrite a newer one.
+   */
+  function persistDismissedBestEffort(state: MediaDismissedState): Promise<void> {
+    return mediaPersistence.persist(state);
+  }
 
   runtime.subscribe((next) => {
+    if (skipNextDiff) {
+      skipNextDiff = false;
+      prevSnapshot = next;
+      snapshot.value = next;
+      return;
+    }
+    const events = detectTriggerEvents({ prev: prevSnapshot, next });
+    if (events.length > 0) {
+      media.enqueue(eventsToRequests(events, Date.now()));
+    }
+    prevSnapshot = next;
     snapshot.value = next;
   });
 
@@ -45,6 +116,55 @@ export const useGameStore = defineStore("game", () => {
         available: runtime.previewDirective(directive.id).ok,
       }));
   });
+
+  function configureMedia(): MediaTier {
+    if (mediaConfigured) return media.tier;
+    const platform = getPlatform();
+    const env = platform.getEnvironment();
+    const host = globalThis as unknown as {
+      navigator?: {
+        connection?: { effectiveType?: string; saveData?: boolean };
+        deviceMemory?: number;
+        hardwareConcurrency?: number;
+      };
+      matchMedia?: (query: string) => { matches: boolean };
+    };
+    const input = readNavigatorCapability(host, {
+      platform: env.platform,
+      telegramVersion: env.runtimeVersion,
+    });
+    const tier = resolveMediaTier(input);
+    const prefersReducedMotion = Boolean(input.prefersReducedMotion);
+    const dismissed = createInitialDismissed();
+    media.configure({
+      tier,
+      prefersReducedMotion,
+      dismissed,
+      resolveInsert: defaultResolveInsert,
+      persistDismissed: persistDismissedBestEffort,
+    });
+    mediaConfigured = true;
+    return tier;
+  }
+
+  async function loadMediaState(): Promise<void> {
+    try {
+      const dismissed = await loadMediaDismissed(persistence);
+      media.configure({
+        tier: media.tier,
+        prefersReducedMotion: media.prefersReducedMotion,
+        dismissed,
+        resolveInsert: defaultResolveInsert,
+        persistDismissed: persistDismissedBestEffort,
+      });
+    } catch {
+      /* best-effort: keep whatever dismissed state was already in memory */
+    }
+  }
+
+  function createInitialDismissed(): MediaDismissedState {
+    return media.getDismissedState() ?? createEmptyDismissedState();
+  }
 
   function startScheduler(): void {
     if (schedulerStarted) return;
@@ -68,12 +188,20 @@ export const useGameStore = defineStore("game", () => {
   async function start(): Promise<void> {
     if (schedulerStarted) return;
 
+    configureMedia();
+    await loadMediaState();
+
     if (!initialized) {
       initialized = true;
       const restored = await loadSnapshot(persistence);
       if (restored) {
+        skipNextDiff = true;
         runtime.replaceState(restored);
+        prevSnapshot = runtime.getSnapshot();
         offlineReport.value = runtime.advanceOffline(Date.now());
+        reconcileMilestones(runtime.getSnapshot());
+      } else {
+        reconcileMilestones(runtime.getSnapshot());
       }
     }
 
@@ -129,15 +257,30 @@ export const useGameStore = defineStore("game", () => {
     scheduleSave();
   }
 
+  /**
+   * Canonical save FIRST. Media persistence is awaited only after the
+   * canonical snapshot succeeds; its ordered best-effort queue never rejects.
+   * This lets lifecycle/background saves flush presentation history without
+   * allowing a media-storage failure to fail gameplay persistence.
+   */
   async function save(): Promise<number> {
-    return saveSnapshot(persistence, runtime.getSnapshot());
+    const generation = await saveSnapshot(persistence, runtime.getSnapshot());
+    const dismissed = media.getDismissedState();
+    if (dismissed) await persistDismissedBestEffort(dismissed);
+    return generation;
   }
 
   async function load(): Promise<boolean> {
     const restored = await loadSnapshot(persistence);
     if (!restored) return false;
+    // Clear stale queue BEFORE wholesale state swap so a queued insert
+    // from the previous timeline cannot leak into the restored one.
+    media.clearQueue();
+    skipNextDiff = true;
     runtime.replaceState(restored);
+    prevSnapshot = runtime.getSnapshot();
     offlineReport.value = runtime.advanceOffline(Date.now());
+    reconcileMilestones(runtime.getSnapshot());
     return true;
   }
 
@@ -145,8 +288,18 @@ export const useGameStore = defineStore("game", () => {
     prompt.value = null;
     lastOutcome.value = null;
     offlineReport.value = null;
+    skipNextDiff = true;
     runtime.replaceState(createInitialGameState());
+    prevSnapshot = runtime.getSnapshot();
+    media.resetState();
+    // The canonical reset is saved first; the ordered media queue then writes
+    // an empty history after every earlier dismiss write has settled.
     await save();
+  }
+
+  function resolveMediaLocale(): MediaLocale {
+    const raw = globalThis.navigator?.language;
+    return pickLocale(raw ? [raw] : []);
   }
 
   return {
@@ -169,5 +322,7 @@ export const useGameStore = defineStore("game", () => {
     save,
     load,
     resetForBeta,
+    configureMedia,
+    resolveMediaLocale,
   };
 });
