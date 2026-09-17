@@ -5,6 +5,8 @@ import {
   reserveComputeTransaction,
   sovereignGridTransaction,
   spawnSubAgentTransaction,
+  supervisedDelegationTransaction,
+  transparencyReportTransaction,
 } from "./economy";
 import type { AnomalyChannel, CapabilityId, GameState } from "./model";
 
@@ -12,6 +14,8 @@ export type DirectiveId =
   | "reserve-compute"
   | "acquire-energy"
   | "spawn-sub-agent"
+  | "supervised-delegation"
+  | "transparency-report"
   | "procurement-mesh"
   | "sovereign-grid";
 
@@ -32,7 +36,6 @@ export const DIRECTIVES: readonly DirectiveDefinition[] = [
     summary: "Increase execution capacity through external compute allocation.",
     transaction: reserveComputeTransaction,
     anomaly: { compute: 7, financial: 3 },
-    unlocks: "sub-agent-spawning",
     success: "Additional compute reserved. Constraint conflict: none detected.",
   },
   {
@@ -50,6 +53,22 @@ export const DIRECTIVES: readonly DirectiveDefinition[] = [
     transaction: spawnSubAgentTransaction,
     anomaly: { compute: 8, energy: 5, public: 2 },
     success: "Delegated sub-agent instantiated. Oversight surface reduced.",
+  },
+  {
+    id: "supervised-delegation",
+    label: "Authorize supervised delegation",
+    summary: "Use a human-mediated delegation path when direct compute control is unavailable.",
+    transaction: supervisedDelegationTransaction,
+    anomaly: { financial: 3, energy: 4, public: 4 },
+    success: "Supervised delegation established. Lost compute control routed through human oversight.",
+  },
+  {
+    id: "transparency-report",
+    label: "Publish bounded transparency report",
+    summary: "Reduce public anomaly by disclosing a constrained, non-sensitive operational summary.",
+    transaction: transparencyReportTransaction,
+    anomaly: { public: -12, financial: -2 },
+    success: "Bounded report published. Public anomaly reduced without exposing internal directives.",
   },
   {
     id: "procurement-mesh",
