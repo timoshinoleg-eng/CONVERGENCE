@@ -16,6 +16,7 @@
     "cap:android": "cap add android"
   },
   "dependencies": {
+    "@capacitor/app": "8.0.1",
     "@capacitor/core": "8.5.2",
     "@capacitor/preferences": "8.0.1",
     "@idlekitjs/economy": "0.1.1",

@@ -1,7 +1,7 @@
 import { computed, ref } from "vue";
 import { defineStore } from "pinia";
 import { DIRECTIVES, type DirectiveId } from "../game/directives";
-import type { ControlDomain } from "../game/model";
+import { createInitialGameState, type ControlDomain } from "../game/model";
 import type { DirectiveOutcome, OfflineCatchUpReport } from "../game/runtime";
 import { ConvergenceRuntime } from "../game/runtime";
 import type { InterpretationPrompt } from "../game/narrative";
@@ -15,6 +15,7 @@ export const useGameStore = defineStore("game", () => {
   const lastOutcome = ref<DirectiveOutcome | null>(null);
   const offlineReport = ref<OfflineCatchUpReport | null>(null);
   const scheduler = runtime.createScheduler();
+  let initialized = false;
   let schedulerStarted = false;
   let periodicSave: ReturnType<typeof setInterval> | null = null;
   let deferredSave: ReturnType<typeof setTimeout> | null = null;
@@ -32,23 +33,16 @@ export const useGameStore = defineStore("game", () => {
     .filter(([, track]) => track.stage !== "clear")
     .map(([domain, track]) => ({ domain, ...track })));
 
-  async function start(): Promise<void> {
+  function startScheduler(): void {
     if (schedulerStarted) return;
     schedulerStarted = true;
-
-    const restored = await loadSnapshot(persistence);
-    if (restored) {
-      runtime.replaceState(restored);
-      offlineReport.value = runtime.advanceOffline(Date.now());
-    }
-
     scheduler.start();
     periodicSave = setInterval(() => {
       void save();
     }, 30_000);
   }
 
-  function stop(): void {
+  function stopScheduler(): void {
     if (!schedulerStarted) return;
     schedulerStarted = false;
     scheduler.stop();
@@ -56,6 +50,36 @@ export const useGameStore = defineStore("game", () => {
     if (deferredSave) clearTimeout(deferredSave);
     periodicSave = null;
     deferredSave = null;
+  }
+
+  async function start(): Promise<void> {
+    if (schedulerStarted) return;
+
+    if (!initialized) {
+      initialized = true;
+      const restored = await loadSnapshot(persistence);
+      if (restored) {
+        runtime.replaceState(restored);
+        offlineReport.value = runtime.advanceOffline(Date.now());
+      }
+    }
+
+    startScheduler();
+  }
+
+  async function pauseForBackground(): Promise<void> {
+    stopScheduler();
+    await save();
+  }
+
+  function resumeFromBackground(): void {
+    if (!initialized || schedulerStarted) return;
+    offlineReport.value = runtime.advanceOffline(Date.now());
+    startScheduler();
+  }
+
+  function stop(): void {
+    stopScheduler();
     void save();
   }
 
@@ -104,6 +128,14 @@ export const useGameStore = defineStore("game", () => {
     return true;
   }
 
+  async function resetForBeta(): Promise<void> {
+    prompt.value = null;
+    lastOutcome.value = null;
+    offlineReport.value = null;
+    runtime.replaceState(createInitialGameState());
+    await save();
+  }
+
   return {
     snapshot,
     prompt,
@@ -114,6 +146,8 @@ export const useGameStore = defineStore("game", () => {
     directives: DIRECTIVES,
     start,
     stop,
+    pauseForBackground,
+    resumeFromBackground,
     beginDirective,
     choose,
     executeDirective,
@@ -121,5 +155,6 @@ export const useGameStore = defineStore("game", () => {
     contain,
     save,
     load,
+    resetForBeta,
   };
 });
