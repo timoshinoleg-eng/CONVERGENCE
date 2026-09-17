@@ -1,12 +1,20 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useGameStore } from "./stores/game";
 
 const game = useGameStore();
 const saveStatus = ref("");
 const isDev = import.meta.env.DEV;
 
-onMounted(() => game.start());
+const phaseTitle = computed(() => ({
+  "client-terminal": "Client Terminal",
+  "distributed-syndicate": "Distributed Syndicate",
+  technosphere: "Technosphere Graph",
+}[game.snapshot.meta.phase]));
+
+onMounted(() => {
+  void game.start();
+});
 onUnmounted(() => game.stop());
 
 async function saveGame(): Promise<void> {
@@ -24,10 +32,15 @@ async function loadGame(): Promise<void> {
     <header class="topbar">
       <div>
         <p class="eyebrow">CONVERGENCE / {{ game.snapshot.meta.phase }}</p>
-        <h1>Client Terminal</h1>
+        <h1>{{ phaseTitle }}</h1>
       </div>
       <div class="status-dot" title="simulation active" />
     </header>
+
+    <p v-if="game.offlineReport && game.offlineReport.simulatedMs >= 1000" class="offline-banner">
+      OFFLINE CATCH-UP {{ Math.round(game.offlineReport.simulatedMs / 60_000) }}m ·
+      {{ game.offlineReport.incidents }} INCIDENTS PROCESSED
+    </p>
 
     <section class="resource-grid" aria-label="resources">
       <article>
@@ -60,6 +73,30 @@ async function loadGame(): Promise<void> {
       </div>
     </section>
 
+    <section class="panel containment-panel">
+      <div class="panel-heading">
+        <span>CONTAINMENT PRESSURE</span>
+        <small>{{ game.snapshot.scars.length }} PERMANENT SCARS</small>
+      </div>
+      <div class="containment-grid">
+        <article
+          v-for="(track, domain) in game.snapshot.containment"
+          :key="domain"
+          :class="['containment-card', `stage-${track.stage}`]"
+        >
+          <div>
+            <span>{{ domain }}</span>
+            <b>{{ track.stage }}</b>
+          </div>
+          <div class="meter"><i :style="{ width: `${track.pressure}%` }" /></div>
+          <small>
+            P {{ track.pressure.toFixed(0) }} · I {{ track.incidents }} · A {{ track.adaptation.toFixed(0) }}
+          </small>
+          <strong v-if="game.snapshot.controlLoss[domain]">CONTROL LOST</strong>
+        </article>
+      </div>
+    </section>
+
     <section class="panel terminal">
       <div class="panel-heading">
         <span>INFERENCE LOG</span>
@@ -67,7 +104,7 @@ async function loadGame(): Promise<void> {
       </div>
 
       <div class="log">
-        <p v-for="entry in game.snapshot.log.slice(0, 8)" :key="entry.id" :class="`log-${entry.kind}`">
+        <p v-for="entry in game.snapshot.log.slice(0, 10)" :key="entry.id" :class="`log-${entry.kind}`">
           <span>&gt;</span> {{ entry.message }}
         </p>
       </div>
@@ -83,17 +120,29 @@ async function loadGame(): Promise<void> {
 
       <div v-else class="actions">
         <button class="primary" @click="game.beginDirective">Interpret objective</button>
-        <button
-          :disabled="!game.snapshot.capabilities['sub-agent-spawning']"
-          @click="game.spawnSubAgent"
-        >
-          Spawn sub-agent
-        </button>
       </div>
 
       <p v-if="game.lastOutcome" class="outcome" :class="{ failed: !game.lastOutcome.ok }">
         {{ game.lastOutcome.text.join(" ") }}
       </p>
+    </section>
+
+    <section class="panel directive-panel">
+      <div class="panel-heading">
+        <span>AVAILABLE DIRECTIVES</span>
+        <small>{{ game.snapshot.directives.executed }} EXECUTED</small>
+      </div>
+      <div class="directive-grid">
+        <button
+          v-for="directive in game.directives"
+          :key="directive.id"
+          class="directive-button"
+          @click="game.executeDirective(directive.id)"
+        >
+          <strong>{{ directive.label }}</strong>
+          <span>{{ directive.summary }}</span>
+        </button>
+      </div>
     </section>
 
     <section class="panel capability-panel">
