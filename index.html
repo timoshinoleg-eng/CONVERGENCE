@@ -15,7 +15,7 @@
         const hasTelegramParams = /(?:^|[?&#])tgWebApp(?:Version|Platform|Data|StartParam)=/.test(source);
         const hasTelegramTransport = typeof window.TelegramWebviewProxy !== "undefined";
         if (hasTelegramParams || hasTelegramTransport) {
-          document.write('<script src="https://telegram.org/js/telegram-web-app.js?63"><\\/script>');
+          document.write('<script src="https://telegram.org/js/telegram-web-app.js?63"></scr' + 'ipt>');
         }
       })();
     </script>
