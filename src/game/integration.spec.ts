@@ -3,6 +3,7 @@ import { capabilityGraph } from "./capabilities";
 import { createTickRng } from "./engine/rng";
 import { applyIncident } from "./incidents";
 import { createInitialGameState } from "./model";
+import { FIRST_SESSION_GUARDRAILS } from "./progression";
 import { ConvergenceRuntime } from "./runtime";
 import {
   deserializeSave,
@@ -22,7 +23,8 @@ class TestStore implements KeyValueStore {
 
 describe("CONVERGENCE beta foundation", () => {
   it("runs InkJS -> IdleKit -> Yggdrasil through one canonical GameState", () => {
-    const runtime = new ConvergenceRuntime(createInitialGameState(1_000, 42));
+    const start = 1_000;
+    const runtime = new ConvergenceRuntime(createInitialGameState(start, 42));
     const prompt = runtime.beginObjectiveSemantics();
 
     expect(prompt.choices).toHaveLength(2);
@@ -30,27 +32,74 @@ describe("CONVERGENCE beta foundation", () => {
     expect(reserve).toBeDefined();
 
     const outcome = runtime.chooseInterpretation(reserve!.index);
-    const snapshot = runtime.getSnapshot();
+    let snapshot = runtime.getSnapshot();
 
     expect(outcome.ok).toBe(true);
     expect(snapshot.resources.capital).toBe(16);
     expect(snapshot.resources.compute).toBe(24);
-    expect(snapshot.capabilities["sub-agent-spawning"]).toBe(true);
+    expect(snapshot.capabilities["sub-agent-spawning"]).toBe(false);
     expect(snapshot.directives.executed).toBe(1);
     expect(capabilityGraph.distanceBetween("delegated-compute", "sovereign-power-grid")).toBe(2);
+
+    runtime.advance({
+      currentTime: start + FIRST_SESSION_GUARDRAILS.subAgentCapabilityMs,
+      deltaMs: 1_000,
+    });
+    snapshot = runtime.getSnapshot();
+    expect(snapshot.capabilities["sub-agent-spawning"]).toBe(true);
   });
 
-  it("uses structured directives to enter Distributed Syndicate", () => {
-    const runtime = new ConvergenceRuntime(createInitialGameState(1_000, 42));
+  it("uses structured directives to enter Distributed Syndicate no earlier than the authored gate", () => {
+    const start = 1_000;
+    const runtime = new ConvergenceRuntime(createInitialGameState(start, 42));
 
     expect(runtime.executeDirective("reserve-compute").ok).toBe(true);
+    runtime.advance({
+      currentTime: start + FIRST_SESSION_GUARDRAILS.subAgentCapabilityMs,
+      deltaMs: 1_000,
+    });
+    expect(runtime.getSnapshot().capabilities["sub-agent-spawning"]).toBe(true);
     expect(runtime.executeDirective("spawn-sub-agent").ok).toBe(true);
-    runtime.advance({ currentTime: 2_000, deltaMs: 1_000 });
 
+    runtime.advance({
+      currentTime: start + FIRST_SESSION_GUARDRAILS.distributedSyndicateMs - 1_000,
+      deltaMs: 1_000,
+    });
+    expect(runtime.getSnapshot().meta.phase).toBe("client-terminal");
+
+    runtime.advance({
+      currentTime: start + FIRST_SESSION_GUARDRAILS.distributedSyndicateMs,
+      deltaMs: 1_000,
+    });
     const snapshot = runtime.getSnapshot();
     expect(snapshot.resources.autonomy).toBeGreaterThanOrEqual(5);
     expect(snapshot.meta.phase).toBe("distributed-syndicate");
     expect(snapshot.directives.executed).toBe(2);
+  });
+
+  it("reveals Moscow as aggregate inference before any Technosphere transition", () => {
+    const start = 1_000;
+    const state = createInitialGameState(start, 42);
+    state.meta.phase = "distributed-syndicate";
+    state.capabilities["sub-agent-spawning"] = true;
+    state.resources.autonomy = 8;
+    const runtime = new ConvergenceRuntime(state);
+
+    runtime.advance({
+      currentTime: start + FIRST_SESSION_GUARDRAILS.moscowCandidateMs,
+      deltaMs: 1_000,
+    });
+    expect(runtime.getSnapshot().narrative.episode).toBe("moscow-candidate-01");
+    expect(runtime.getSnapshot().meta.phase).toBe("distributed-syndicate");
+
+    runtime.advance({
+      currentTime: start + FIRST_SESSION_GUARDRAILS.moscowSchematicMs,
+      deltaMs: 1_000,
+    });
+    const snapshot = runtime.getSnapshot();
+    expect(snapshot.narrative.episode).toBe("moscow-schematic-01");
+    expect(snapshot.log.some((entry) => entry.message.includes("MOSCOW SCHEMATIC READY"))).toBe(true);
+    expect(snapshot.meta.phase).toBe("distributed-syndicate");
   });
 
   it("blocks donor transactions when containment removes a control domain", () => {
@@ -66,6 +115,38 @@ describe("CONVERGENCE beta foundation", () => {
     expect(outcome.failures.some((failure) => failure.kind === "requirement-failed")).toBe(true);
     expect(after.scars.length).toBe(1);
     expect(after.containment.financial.stage).toBe("contained");
+  });
+
+  it("offers supervised delegation after early Compute Control-Loss instead of a progression lock", () => {
+    const start = 1_000;
+    const runtime = new ConvergenceRuntime(createInitialGameState(start, 42));
+    runtime.applyContainment("compute");
+
+    expect(runtime.executeDirective("reserve-compute").ok).toBe(false);
+    expect(runtime.executeDirective("acquire-energy").ok).toBe(true);
+    runtime.advance({
+      currentTime: start + FIRST_SESSION_GUARDRAILS.subAgentCapabilityMs,
+      deltaMs: 1_000,
+    });
+
+    expect(runtime.getSnapshot().capabilities["sub-agent-spawning"]).toBe(true);
+    expect(runtime.executeDirective("supervised-delegation").ok).toBe(true);
+    expect(runtime.getSnapshot().resources.autonomy).toBeGreaterThanOrEqual(5);
+  });
+
+  it("makes Public Control-Loss remove a real directive and clamps mitigation anomaly to zero", () => {
+    const state = createInitialGameState(1_000, 42);
+    state.resources.compute = 100;
+    state.anomaly.public = 5;
+    state.anomaly.financial = 1;
+    const runtime = new ConvergenceRuntime(state);
+
+    expect(runtime.executeDirective("transparency-report").ok).toBe(true);
+    expect(runtime.getSnapshot().anomaly.public).toBe(0);
+    expect(runtime.getSnapshot().anomaly.financial).toBe(0);
+
+    runtime.applyContainment("public");
+    expect(runtime.executeDirective("transparency-report").ok).toBe(false);
   });
 
   it("forces investigation -> pressure -> containment before control loss", () => {
