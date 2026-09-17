@@ -1,6 +1,14 @@
 # Gameplay redesign — what to hand over
 
-Companion index to [`GAMEPLAY-REDESIGN.md`](./GAMEPLAY-REDESIGN.md) (1457 lines).
+> ⚠️ **PROPOSAL / RESEARCH — not a canonical production specification.**
+> This index and the companion [`GAMEPLAY-REDESIGN.md`](./GAMEPLAY-REDESIGN.md)
+> describe a strong north-star design, not an authorised P0 implementation plan.
+> The full U-25 → U-01 → … chain is **intentionally not approved** for immediate
+> execution. The team is still consolidating gameplay, UX, visual, Telegram and
+> independent red-team results into a more compact `GAMEPLAY_BETA_V2_SPEC`. Do
+> not start production wiring until that spec is frozen.
+
+Companion index to `GAMEPLAY-REDESIGN.md` (1457 lines).
 That document is self-sufficient as a design; the artifacts below make it
 **executable and verifiable**. Everything is local, no backend required.
 
@@ -8,8 +16,8 @@ That document is self-sufficient as a design; the artifacts below make it
 
 | # | Path | Why | How to verify |
 |---|---|---|---|
-| 1 | `src/game/v3/` (10 files, ~2040 lines) | **The main one.** Working reference core: 14 constraint words, 8 directives × 23 plans, 6 conflict patterns, 5 domain packs, `selectPlan` + `economy`. Turns deliverables 2/3/5/6 from prose into code | `npx vitest run src/game/v3` → **37 passed** |
-| 2 | `src/game/v3/README.md` | 4 steps to wire into v2: save migration → `resolveDirective` in `executeDirective` → Interpretation Window queue → `DOMAIN_PACKS` in `applyContainment` | read first |
+| 1 | `src/game/v3/` (11 files, ~2300 lines) | **The main one.** Working reference core: 14 constraint words, 8 directives × 23 plans, 6 conflict patterns, 5 domain packs, `selectPlan` + `economy` + `rates`. Turns deliverables 2/3/5/6 from prose into code | `npx vitest run src/game/v3` → **81 passed** |
+| 2 | `src/game/v3/README.md` | Status, semantics, and 4 steps to wire into v2 (NOT authorised yet) | read first |
 | 3 | `docs/PACING_BASELINE.json` | **Measured "before".** 5 scenarios × 30 min: milestones, resources, anomalies. This is the bug in numbers — aggressive and measured both end at autonomy **59**. Regression base: after U-01…U-08 these numbers **must** diverge | `npm run test:pacing -- --testTimeout=180000` |
 | 4 | `docs/IMPLEMENTATION-UNITS.json` | 30 units (U-01…U-29 + U-26b) machine-readable: feature, player value, systems, donor, R1/R2/R3, difficulty, deps, acceptance. Imports into Issues / Project Board without retyping | `node scripts/export-units.mjs` (regenerates from the doc) |
 | 5 | `docs/MECHANICS-MATRIX.csv` | 28 mechanics × 10 columns from section C. Open in a sheet, assign owners | open in Excel/Sheets |
@@ -36,15 +44,17 @@ the gate proving the Interpretation Cycle actually changed behaviour.
 
 ```
 npm run typecheck                       clean
-npx vitest run src/game/v3              37 passed   (~1s)
+npx vitest run src/game/v3              81 passed   (~1s)
 npx vitest run --testTimeout=180000     115 passed  (~28.6s)
 ```
 
 No file in `src/game/*.ts` (v2) is modified. There is no second simulation loop and
 `GameState` is still the single canonical state.
 
-## Remaining work, in P0 order (section B)
+## Proposed remaining work (section B — NOT AUTHORISED for immediate execution)
 
 U-25 save migration → U-01 Oversight → U-02 upkeep → U-03 energy ceiling →
 U-05 priority vector → U-06 `selectPlan` → U-07 interpretation window →
 U-08 constraint words. Without those eight there is still no decision to make.
+
+**Do not start this chain until the consolidated Beta V2 spec is frozen.**

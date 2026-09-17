@@ -49,8 +49,16 @@ export const ANOMALY_CHANNELS: readonly AnomalyChannel[] = [
   "public",
 ];
 
-/** Stocks spendable by directives. `autonomy` is a level, `oversight` is the player budget. */
-export type StockKey = "compute" | "capital" | "energy" | "autonomy" | "oversight";
+/**
+ * Stocks spendable by directives. `autonomy` is a level, `oversight` is the
+ * player budget.
+ *
+ * NOTE: there is deliberately **no spendable `energy` stock**. The redesign makes
+ * Energy a *ceiling* (`energyCeiling`), not a third currency. Carrying both a
+ * spendable stock and a ceiling was an architectural contradiction — see
+ * `engine/rates.ts` and the "Energy model" section of the README.
+ */
+export type StockKey = "compute" | "capital" | "autonomy" | "oversight";
 
 /** Continuous rates / ceilings (D3). */
 export type RateKey =
@@ -116,9 +124,35 @@ export interface ConstraintWord {
 // Effects
 // ---------------------------------------------------------------------------
 
+/**
+ * EFFECT SEMANTICS — read this before adding content.
+ *
+ * Every numeric field has exactly ONE meaning. Mixing absolute deltas with
+ * percentages in one field was the original defect (a plan could say
+ * `energyCeiling: 20` meaning "+20" while a pattern said `energyCeiling: 0.25`
+ * meaning "+25%"). The split is now:
+ *
+ * | field       | meaning                                  | example          |
+ * |-------------|------------------------------------------|------------------|
+ * | `rate`      | ABSOLUTE DELTA added to the rate         | `+20` => +20     |
+ * | `rateMul`   | MULTIPLIER applied to the rate           | `1.25` => +25%   |
+ * | `stock`     | ABSOLUTE DELTA added to the stock        | `-8`  => -8      |
+ * | `anomaly`   | ABSOLUTE DELTA added to the channel      | `+9`  => +9      |
+ * | `upkeep`    | ABSOLUTE capital/sec obligation          | `+0.05`          |
+ * | `upkeepMul` | MULTIPLIER on total capital upkeep       | `0.85` => -15%   |
+ *
+ * Rule of thumb: if you want to say "x1.4" or "-15%", it belongs in a `*Mul`
+ * field. If you want to say "+20", it belongs in a plain field. Never both.
+ *
+ * Composition (`mergeEffects`): plain fields SUM, `*Mul` fields MULTIPLY.
+ * Valid ranges per rate key live in `engine/rates.ts` (`RATE_RANGES`).
+ */
 export interface Effect {
   stock?: Partial<Record<StockKey, number>>;
+  /** Absolute deltas only. */
   rate?: Partial<Record<RateKey, number>>;
+  /** Multiplicative modifiers only: 1.25 = +25%, 0.5 = halved. */
+  rateMul?: Partial<Record<RateKey, number>>;
   anomaly?: Partial<Record<AnomalyChannel, number>>;
   /** Capability id granted. */
   capability?: string;
@@ -132,8 +166,10 @@ export interface Effect {
   scar?: string;
   /** Adaptation gained in a domain. */
   adaptation?: Partial<Record<ControlDomain, number>>;
-  /** Permanent upkeep obligation created (capital/sec). */
+  /** Permanent upkeep obligation created (capital/sec). Absolutes only. */
   upkeep?: number;
+  /** Multiplicative modifier on capital upkeep: 0.85 = -15%. */
+  upkeepMul?: number;
 }
 
 export interface DelayedEffect {
@@ -189,10 +225,32 @@ export type GlobalPatternId =
   | "cp-13-policy-collision"
   | "cp-14-self-funding";
 
+/**
+ * How often a pattern may fire.
+ *
+ * Without this, `patterns.filter(p => p.when(ctx))` re-applies a pattern on
+ * **every** directive while its condition holds — so a persistent state (e.g.
+ * autonomy >= 45) silently stacks the same effect dozens of times.
+ *
+ * - `repeat`   — fires every time the condition holds. Only safe for effects
+ *                that are idempotent or clamped.
+ * - `once`     — fires at most once for the whole run (persisted in the save).
+ * - `cooldown` — fires at most once per `cooldownMs`.
+ */
+export type PatternTrigger =
+  | { kind: "repeat" }
+  | { kind: "once" }
+  | { kind: "cooldown"; cooldownMs: number };
+
+/** Per-run firing bookkeeping. Persisted, serialisable, no timers. */
+export type PatternState = Record<string, { fired: boolean; lastFiredMs: number | null }>;
+
 export interface GlobalPattern {
   id: GlobalPatternId;
   /** State predicate that must hold for the pattern to fire. */
   when: (ctx: PatternContext) => boolean;
+  /** Firing semantics. Defaults to `repeat` if omitted (legacy behaviour). */
+  trigger: PatternTrigger;
   immediate: Effect;
   delayed?: DelayedEffect[];
   divergenceId: string;
@@ -254,8 +312,18 @@ export interface DomainPack {
 export interface PlanSelection {
   directiveId: string;
   plan: PlanVariant;
-  /** Plan id that would have won with no constraints — used for explanations. */
+  /**
+   * Plan id that would have won with no constraint words — used for
+   * explanations ("you bound cost-cap, so it did X instead of Y").
+   *
+   * Ranked ONLY among plans that are structurally available: `requires` must be
+   * satisfied and the plan must not be forbidden by Control-Loss. A plan that
+   * was impossible for reasons unrelated to the bound words must never be
+   * reported as "preferred", or the Decision Trace lies.
+   */
   preferredPlanId: string;
+  /** Why the preferred plan is not the one being executed. */
+  preferredUnavailableReason: "none" | "words" | "not-selectable";
   deadlock: boolean;
   /** Plan ids removed by constraint words. */
   blockedByWords: string[];

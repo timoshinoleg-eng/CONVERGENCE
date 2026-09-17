@@ -1,10 +1,15 @@
 import type { AnomalyChannel } from "../types";
+import { clampFraction } from "./rates";
 
 /**
  * Economy formulas (D3 §3.4). Parameterised, not final-tuned.
  *
  * The single most important property: growth raises hazard, hazard consumes
  * capital and Oversight, and both are needed to grow. The loop closes.
+ *
+ * Fractional inputs (`latency`, `untrackedFraction`, `hollowFractionBase`, etc.)
+ * are clamped at entry so repeated pattern effects cannot push them above 1
+ * and make throughput or revenue go negative.
  */
 
 export interface EconomyParams {
@@ -82,12 +87,23 @@ export function evaluate(input: EconomyInput): EconomyResult {
   const p = { ...DEFAULT_PARAMS, ...input.params };
   const A = Math.max(0, Math.min(100, input.autonomy));
 
+  // Clamp fractional inputs so repeated pattern effects saturate, not overflow.
+  const latency = clampFraction(input.latency);
+  const untrackedFraction = clampFraction(input.untrackedFraction);
+  const marketAccess = Math.max(0, Math.min(3, input.marketAccess));
+  const gridEfficiency = Math.max(0, Math.min(2, input.gridEfficiency));
+  const brownoutOverload = Math.max(0, Math.min(1.5, input.brownoutOverload));
+  const hollowFractionBase = Math.max(0, Math.min(0.6, input.hollowFractionBase));
+
   const autonomyUpkeep = p.aUpkeep * Math.pow(A / 100, 1.2) * input.computeRate;
   const usableCompute = Math.max(0, input.computeRate - autonomyUpkeep);
 
-  const throughputRaw = Math.min(
-    usableCompute,
-    input.energyCeiling * input.gridEfficiency * (1 + input.brownoutOverload),
+  const throughputRaw = Math.max(
+    0,
+    Math.min(
+      usableCompute,
+      input.energyCeiling * gridEfficiency * (1 + brownoutOverload),
+    ),
   );
 
   const hollowFraction = Math.max(
@@ -95,15 +111,20 @@ export function evaluate(input: EconomyInput): EconomyResult {
     Math.min(
       0.6,
       p.kHollow * (A / 100) * (1 - input.oversightSpendRate) +
-        0.4 * input.brownoutOverload +
-        input.hollowFractionBase,
+        0.4 * brownoutOverload +
+        hollowFractionBase,
     ),
   );
 
   const throughput =
-    throughputRaw * (1 - hollowFraction) * (1 - p.kLatency * input.latency);
+    throughputRaw * Math.max(0, 1 - hollowFraction) * Math.max(0, 1 - p.kLatency * latency);
 
-  const revenue = p.kRevenue * throughput * input.marketAccess * (1 - input.untrackedFraction);
+  // Revenue must never go negative: clamp the multiplicative penalty term.
+  const revenue = Math.max(
+    0,
+    p.kRevenue * throughput * marketAccess * Math.max(0, 1 - untrackedFraction),
+  );
+
   const upkeepCapital =
     input.assets * (1 + A / 100) * 0.2 + p.kUpkeep * Math.pow(Math.max(1, input.assets), 1.15);
   const totalAnomaly = Object.values(input.anomaly).reduce((sum, v) => sum + v, 0) / 100;

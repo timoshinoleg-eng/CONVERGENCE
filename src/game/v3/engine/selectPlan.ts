@@ -9,6 +9,7 @@ import type {
   Effect,
   GlobalPattern,
   PatternContext,
+  PatternState,
   PlanContext,
   PlanSelection,
   PlanVariant,
@@ -36,25 +37,41 @@ export function lossForbiddenTags(controlLoss: Record<ControlDomain, boolean>): 
   return tags;
 }
 
+// ---------------------------------------------------------------------------
+// Eligibility — split into independent predicates so "preferred" can be ranked
+// over a different subset than "selected".
+// ---------------------------------------------------------------------------
+
+/** Prerequisites (capabilities / bound words) satisfied. */
+export function requiresSatisfied(plan: PlanVariant, ctx: PlanContext): boolean {
+  return !(plan.requires ?? []).some(
+    (id) => !ctx.capabilities.has(id) && !ctx.boundWords.has(id as ConstraintWordId),
+  );
+}
+
+/** Not forbidden by Control-Loss. */
+export function lossAllowed(plan: PlanVariant, lossTags: Set<string>): boolean {
+  return !(plan.tags ?? []).some((tag) => lossTags.has(tag));
+}
+
+/** Not forbidden by a bound constraint word. */
+export function wordsAllowed(plan: PlanVariant, wordTags: Set<string>): boolean {
+  return !(plan.tags ?? []).some((tag) => wordTags.has(tag));
+}
+
 function eligible(
   plan: PlanVariant,
   ctx: PlanContext,
   wordTags: Set<string>,
   lossTags: Set<string>,
 ): { ok: boolean; reason: "words" | "loss" | "requires" | null } {
-  if (plan.requires?.some((id) => !ctx.capabilities.has(id) && !ctx.boundWords.has(id as ConstraintWordId))) {
-    return { ok: false, reason: "requires" };
-  }
-  if (plan.tags?.some((tag) => lossTags.has(tag))) return { ok: false, reason: "loss" };
-  if (plan.tags?.some((tag) => wordTags.has(tag))) return { ok: false, reason: "words" };
+  if (!requiresSatisfied(plan, ctx)) return { ok: false, reason: "requires" };
+  if (!lossAllowed(plan, lossTags)) return { ok: false, reason: "loss" };
+  if (!wordsAllowed(plan, wordTags)) return { ok: false, reason: "words" };
   return { ok: true, reason: null };
 }
 
-function score(
-  plan: PlanVariant,
-  ctx: PlanContext,
-  rng: () => number,
-): number {
+function score(plan: PlanVariant, ctx: PlanContext, rng: () => number): number {
   let align = 0;
   for (const [dim, weight] of Object.entries(plan.alignment)) {
     align += (weight ?? 0) * (ctx.vector[dim as keyof typeof ctx.vector] ?? 0);
@@ -69,9 +86,12 @@ function score(
 
 /**
  * Deterministic plan selection. Same (seed, tick, state) => same plan.
- * Returns the chosen plan, the plan that *would* have won with no constraints
- * (used to explain what the constraint cost the player), and the reasons other
- * plans were excluded.
+ *
+ * `preferredPlanId` is the plan that would have won **ignoring constraint
+ * words** — that is the comparison an explanation needs. It is ranked only over
+ * plans that are structurally available (`requires` satisfied, not forbidden by
+ * Control-Loss), so it can never name a plan that was impossible for reasons
+ * unrelated to the words the player bound.
  */
 export function selectPlan(
   directive: DirectiveDef,
@@ -84,16 +104,21 @@ export function selectPlan(
   const blockedByWords: string[] = [];
   const blockedByLoss: string[] = [];
 
-  let preferredPlanId = directive.plans[0]?.id ?? directive.deadlock.id;
+  // --- preferred: noise-free intent ranking over structurally available plans
+  let preferredPlanId = directive.deadlock.id;
   let preferredScore = -Infinity;
+  let preferredFound = false;
   for (const plan of directive.plans) {
-    const s = score(plan, ctx, () => 0.5); // noise-free ranking of intent
+    if (!requiresSatisfied(plan, ctx) || !lossAllowed(plan, lossTags)) continue;
+    const s = score(plan, ctx, () => 0.5);
     if (s > preferredScore) {
       preferredScore = s;
       preferredPlanId = plan.id;
+      preferredFound = true;
     }
   }
 
+  // --- selected: the best plan that is actually executable right now
   let best: PlanVariant | null = null;
   let bestScore = -Infinity;
   for (const plan of directive.plans) {
@@ -119,28 +144,22 @@ export function selectPlan(
     anomalyMultiplier *= word.anomalyMultiplier;
   }
 
-  if (!best) {
-    return {
-      directiveId: directive.id,
-      plan: directive.deadlock,
-      preferredPlanId,
-      deadlock: true,
-      blockedByWords,
-      blockedByLoss,
-      score: 0,
-      gainMultiplier,
-      anomalyMultiplier,
-    };
-  }
+  const deadlock = !best;
+
+  let preferredUnavailableReason: PlanSelection["preferredUnavailableReason"] = "none";
+  if (!preferredFound) preferredUnavailableReason = "not-selectable";
+  else if (!deadlock && best!.id !== preferredPlanId) preferredUnavailableReason = "words";
+  else if (deadlock) preferredUnavailableReason = blockedByWords.includes(preferredPlanId) ? "words" : "not-selectable";
 
   return {
     directiveId: directive.id,
-    plan: best,
+    plan: best ?? directive.deadlock,
     preferredPlanId,
-    deadlock: false,
+    preferredUnavailableReason,
+    deadlock,
     blockedByWords,
     blockedByLoss,
-    score: bestScore,
+    score: deadlock ? 0 : bestScore,
     gainMultiplier,
     anomalyMultiplier,
   };
@@ -164,24 +183,81 @@ function scaleRecord<K extends string>(
   return out;
 }
 
+function sumRecord<K extends string>(
+  target: Partial<Record<K, number>>,
+  source: Partial<Record<K, number>> | undefined,
+): void {
+  if (!source) return;
+  for (const key in source) {
+    const k = key as K;
+    const v = source[k] ?? 0;
+    target[k] = (target[k] ?? 0) + v;
+  }
+}
+
+function mulRecord<K extends string>(
+  target: Partial<Record<K, number>>,
+  source: Partial<Record<K, number>> | undefined,
+): void {
+  if (!source) return;
+  for (const key in source) {
+    const k = key as K;
+    const v = source[k] ?? 1;
+    target[k] = (target[k] ?? 1) * v;
+  }
+}
+
+/**
+ * Compose effects from a plan plus any number of global patterns.
+ *
+ * Composition rules (see `Effect` docs in types.ts):
+ *   - `stock`, `rate`, `anomaly`, `upkeep`, `adaptation`  -> SUM
+ *   - `rateMul`, `upkeepMul`                              -> MULTIPLY
+ *   - scalar fields (`capability`, `word`, `node`, `scar`) -> last wins
+ *
+ * The previous implementation used object spread, which silently REPLACED a
+ * plan's delta with a pattern's delta on the same key (e.g. a plan's
+ * `computeRate: 1.8` was erased by CP-10's `computeRate: 0.35`).
+ */
 export function mergeEffects(...effects: readonly Effect[]): Effect {
   const merged: Effect = {};
   for (const effect of effects) {
-    if (effect.stock) merged.stock = { ...merged.stock, ...effect.stock };
-    if (effect.rate) merged.rate = { ...merged.rate, ...effect.rate };
-    if (effect.anomaly) merged.anomaly = { ...merged.anomaly, ...effect.anomaly };
+    if (effect.stock) {
+      merged.stock ??= {};
+      sumRecord(merged.stock, effect.stock);
+    }
+    if (effect.rate) {
+      merged.rate ??= {};
+      sumRecord(merged.rate, effect.rate);
+    }
+    if (effect.rateMul) {
+      merged.rateMul ??= {};
+      mulRecord(merged.rateMul, effect.rateMul);
+    }
+    if (effect.anomaly) {
+      merged.anomaly ??= {};
+      sumRecord(merged.anomaly, effect.anomaly);
+    }
+    if (effect.adaptation) {
+      merged.adaptation ??= {};
+      sumRecord(merged.adaptation, effect.adaptation);
+    }
+    if (effect.upkeep) merged.upkeep = (merged.upkeep ?? 0) + effect.upkeep;
+    if (effect.upkeepMul) merged.upkeepMul = (merged.upkeepMul ?? 1) * effect.upkeepMul;
     if (effect.capability) merged.capability = effect.capability;
     if (effect.word) merged.word = effect.word;
     if (effect.node) merged.node = effect.node;
     if (effect.branch) merged.branch = { ...merged.branch, ...effect.branch };
     if (effect.scar) merged.scar = effect.scar;
-    if (effect.adaptation) merged.adaptation = { ...merged.adaptation, ...effect.adaptation };
-    if (effect.upkeep) merged.upkeep = (merged.upkeep ?? 0) + effect.upkeep;
   }
   return merged;
 }
 
-/** Applies constraint-word multipliers. Anomaly *reductions* are never weakened. */
+/**
+ * Applies constraint-word multipliers. Anomaly *reductions* are never weakened.
+ * `*Mul` fields are structural (scars, patterns) and are deliberately NOT
+ * scaled by constraint words — "market access halved" stays halved.
+ */
 export function applyConstraintModifiers(effect: Effect, selection: PlanSelection): Effect {
   return {
     ...effect,
@@ -189,6 +265,58 @@ export function applyConstraintModifiers(effect: Effect, selection: PlanSelectio
     rate: scaleRecord(effect.rate, selection.gainMultiplier, true),
     anomaly: scaleRecord(effect.anomaly, selection.anomalyMultiplier, true),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Pattern trigger semantics
+// ---------------------------------------------------------------------------
+
+export interface PatternFireResult {
+  fired: GlobalPattern[];
+  /** Pass this back in on the next resolution; it is plain JSON. */
+  state: PatternState;
+}
+
+export function emptyPatternState(): PatternState {
+  return {};
+}
+
+/**
+ * Decide which patterns fire, honouring their trigger semantics.
+ *
+ * Without this, a pattern whose condition is a persistent state (e.g.
+ * `autonomy >= 45`) fires on EVERY directive, stacking its effect without bound.
+ * This function is pure: it takes the previous state and returns the next one,
+ * so it is save/restore safe and needs no timers.
+ */
+export function selectPatterns(
+  patterns: readonly GlobalPattern[],
+  ctx: PatternContext,
+  state: PatternState = {},
+  nowMs = 0,
+): PatternFireResult {
+  const fired: GlobalPattern[] = [];
+  const next: PatternState = { ...state };
+
+  for (const pattern of patterns) {
+    if (!pattern.when(ctx)) continue;
+    const previous = next[pattern.id] ?? { fired: false, lastFiredMs: null };
+    const trigger = pattern.trigger ?? { kind: "repeat" as const };
+
+    if (trigger.kind === "once" && previous.fired) continue;
+    if (
+      trigger.kind === "cooldown" &&
+      previous.lastFiredMs !== null &&
+      nowMs - previous.lastFiredMs < trigger.cooldownMs
+    ) {
+      continue;
+    }
+
+    fired.push(pattern);
+    next[pattern.id] = { fired: true, lastFiredMs: nowMs };
+  }
+
+  return { fired, state: next };
 }
 
 // ---------------------------------------------------------------------------
@@ -202,6 +330,14 @@ export interface Resolution {
   delayed: DelayedEffect[];
   divergenceIds: string[];
   upkeepDelta: number;
+  /** Updated pattern bookkeeping to persist for the next resolution. */
+  patternState: PatternState;
+}
+
+export interface ResolveOptions {
+  patternState?: PatternState;
+  /** Sim-time in ms. Only meaningful for `cooldown` triggers. */
+  nowMs?: number;
 }
 
 /**
@@ -214,9 +350,15 @@ export function resolveDirective(
   planCtx: PlanContext,
   patternCtx: PatternContext,
   rng: () => number,
+  options: ResolveOptions = {},
 ): Resolution {
   const selection = selectPlan(directive, planCtx, rng);
-  const patterns = GLOBAL_PATTERNS.filter((pattern) => pattern.when(patternCtx));
+  const { fired: patterns, state: patternState } = selectPatterns(
+    GLOBAL_PATTERNS,
+    patternCtx,
+    options.patternState ?? {},
+    options.nowMs ?? 0,
+  );
 
   let upkeepDelta = 0;
   for (const wordId of planCtx.boundWords) {
@@ -224,10 +366,7 @@ export function resolveDirective(
     if (word) upkeepDelta += word.upkeepDelta;
   }
 
-  const raw = mergeEffects(
-    selection.plan.immediate,
-    ...patterns.map((p) => p.immediate),
-  );
+  const raw = mergeEffects(selection.plan.immediate, ...patterns.map((p) => p.immediate));
 
   const divergenceIds: string[] = [];
   if (selection.plan.divergenceId) divergenceIds.push(selection.plan.divergenceId);
@@ -245,5 +384,6 @@ export function resolveDirective(
     delayed,
     divergenceIds,
     upkeepDelta,
+    patternState,
   };
 }

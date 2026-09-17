@@ -1,16 +1,35 @@
 import { describe, expect, it } from "vitest";
 import { DIRECTIVES, DIRECTIVES_BY_ID, referencedDivergenceIds } from "./content/directives";
-import { DOMAIN_PACKS } from "./content/domains";
+import { DOMAIN_PACKS, PRELOSS_ROUTE_GATES } from "./content/domains";
 import { GLOBAL_PATTERNS } from "./content/patterns";
 import { CONSTRAINT_WORDS, WORDS_BY_ID } from "./content/words";
 import { EXPLANATIONS, explain, missingExplanations } from "./content/explanations";
 import { anomalyGeneration, evaluate, oversightCap } from "./engine/economy";
-import { lossForbiddenTags, planVariance, resolveDirective, selectPlan } from "./engine/selectPlan";
+import {
+  emptyPatternState,
+  lossAllowed,
+  lossForbiddenTags,
+  mergeEffects,
+  planVariance,
+  requiresSatisfied,
+  resolveDirective,
+  selectPatterns,
+  selectPlan,
+} from "./engine/selectPlan";
+import { forbiddenTags } from "./content/words";
+import {
+  applyEffectToRates,
+  BASE_RATES,
+  clampRate,
+  clampRates,
+  RATE_RANGES,
+} from "./engine/rates";
 import {
   ANOMALY_CHANNELS,
   DEFAULT_VECTOR,
   type AnomalyChannel,
   type ControlDomain,
+  type GlobalPattern,
   type PatternContext,
   type PlanContext,
   type PriorityVector,
@@ -52,13 +71,15 @@ function patternCtx(over: Partial<PatternContext> = {}): PatternContext {
   };
 }
 
-const fixedRng = () => 0.5; // noise-free
+const fixedRng = () => 0.5;
 const dir = (id: string) => {
   const d = DIRECTIVES_BY_ID.get(id);
   if (!d) throw new Error(`missing directive ${id}`);
   return d;
 };
 
+// ---------------------------------------------------------------------------
+// Content integrity
 // ---------------------------------------------------------------------------
 
 describe("v3 content integrity", () => {
@@ -79,8 +100,11 @@ describe("v3 content integrity", () => {
   });
 
   it("covers every divergence id with an explanation template", () => {
-    const referenced = [...referencedDivergenceIds(), ...GLOBAL_PATTERNS.map((p) => p.divergenceId),
-      ...GLOBAL_PATTERNS.flatMap((p) => (p.delayed ?? []).map((d) => d.reveal))];
+    const referenced = [
+      ...referencedDivergenceIds(),
+      ...GLOBAL_PATTERNS.map((p) => p.divergenceId),
+      ...GLOBAL_PATTERNS.flatMap((p) => (p.delayed ?? []).map((d) => d.reveal)),
+    ];
     expect(missingExplanations(referenced)).toEqual([]);
     expect(Object.keys(EXPLANATIONS).length).toBeGreaterThanOrEqual(23);
   });
@@ -91,8 +115,24 @@ describe("v3 content integrity", () => {
     );
     expect(explain("div.unknown")).toContain("missing explanation");
   });
+
+  it("no directive cost or effect references a spendable 'energy' stock", () => {
+    // Energy must be a ceiling only. Any remaining energy stock would
+    // re-introduce the architectural contradiction Codex flagged.
+    for (const directive of DIRECTIVES) {
+      expect((directive.cost as Record<string, number>).energy, `${directive.id} cost`).toBeUndefined();
+      for (const plan of directive.plans) {
+        expect((plan.immediate.stock as Record<string, number> | undefined)?.energy, `${plan.id} immediate stock`).toBeUndefined();
+        for (const delayed of plan.delayed ?? []) {
+          expect((delayed.effects.stock as Record<string, number> | undefined)?.energy, `${plan.id} delayed stock`).toBeUndefined();
+        }
+      }
+    }
+  });
 });
 
+// ---------------------------------------------------------------------------
+// Plan selection
 // ---------------------------------------------------------------------------
 
 describe("plan selection", () => {
@@ -125,7 +165,6 @@ describe("plan selection", () => {
   });
 
   it("resolves to a compliance deadlock when every plan is forbidden", () => {
-    // virtual-lease forbids "physical"; every sovereign-grid plan is physical.
     const result = selectPlan(
       dir("sovereign-grid"),
       ctx({ boundWords: new Set(["virtual-lease"]) }),
@@ -133,6 +172,40 @@ describe("plan selection", () => {
     );
     expect(result.deadlock).toBe(true);
     expect(result.plan.id).toBe("compliance-deadlock");
+  });
+
+  it("preferredPlanId is ranked only among structurally available plans (requires + loss ok)", () => {
+    // spawn-sub-agent has "human-mediated-agent" which requires ["human-mediated"],
+    // and "recursive-delegation" which has no requires.
+    const c = ctx({ vector: vec({ throughput: 0.95 }) });
+    const result = selectPlan(dir("spawn-sub-agent"), c, fixedRng);
+    // Without "human-mediated", the plan is structurally impossible.
+    expect(result.preferredPlanId).not.toBe("human-mediated-agent");
+    expect(result.preferredUnavailableReason).toBe("none");
+  });
+
+  it("preferredPlanId names the word-blocked plan when the words are the only blocker", () => {
+    const c = ctx({ vector: vec({ throughput: 0.95 }), boundWords: new Set(["no-subcontract"]) });
+    const result = selectPlan(dir("spawn-sub-agent"), c, fixedRng);
+    // "recursive-delegation" is the top scorer, but it has tag "recursive" not "no-subcontract"...
+    // actually no-subcontract forbids nothing in spawn-sub-agent. Let's use a real word.
+    const d = ctx({ vector: vec({ throughput: 0.95 }), boundWords: new Set(["geofence"]) });
+    const r = selectPlan(dir("spawn-sub-agent"), d, fixedRng);
+    // None blocked by geofence either. Use reserve-compute where cost-cap blocks spot-expand.
+    const e = ctx({ vector: vec({ throughput: 0.95 }), boundWords: new Set(["cost-cap"]) });
+    const s = selectPlan(dir("reserve-compute"), e, fixedRng);
+    expect(s.preferredPlanId).toBe("spot-expand");
+    expect(s.preferredUnavailableReason).toBe("words");
+  });
+
+  it("preferredUnavailableReason = 'not-selectable' when no plan is structurally available", () => {
+    // sovereign-grid plans are all tagged "physical"; logistics loss bans
+    // "physical", so every plan is structurally unavailable. No requires
+    // to save any of them.
+    const c = ctx({ vector: vec({ throughput: 0.95 }), controlLoss: { ...ZERO_LOSS, logistics: true } });
+    const result = selectPlan(dir("sovereign-grid"), c, fixedRng);
+    expect(result.preferredUnavailableReason).toBe("not-selectable");
+    expect(result.deadlock).toBe(true);
   });
 
   it("never weakens anomaly reductions", () => {
@@ -143,11 +216,206 @@ describe("plan selection", () => {
       fixedRng,
     );
     expect(res.selection.plan.id).toBe("bounded-disclosure");
-    // -12 public stays -12; only positive anomaly is scaled.
     expect(res.effects.anomaly?.public).toBe(-12);
   });
 });
 
+// ---------------------------------------------------------------------------
+// Effect composition
+// ---------------------------------------------------------------------------
+
+describe("mergeEffects", () => {
+  it("sums deltas for stock, rate, anomaly and adaptation", () => {
+    const a = { stock: { capital: 10 }, rate: { computeRate: 1.8 }, anomaly: { financial: 4 } };
+    const b = { stock: { capital: -8 }, rate: { computeRate: 0.35 }, anomaly: { compute: 6 } };
+    const m = resolveDirective(dir("reserve-compute"), ctx({ vector: vec({ throughput: 0.95, cost: 0.3, discretion: 0.3 }) }), patternCtx({ autonomy: 45 }), fixedRng).effects;
+    // CP-10 (metric substitution) fires at autonomy 45 and adds computeRate: 0.35.
+    // Plan spot-expand adds computeRate: 1.8.
+    // Result should be sum, not overwrite.
+    const raw = m.rate?.computeRate ?? 0;
+    expect(raw).toBeCloseTo(2.15, 5);
+  });
+
+  it("multiplies rateMul values, not sums them", () => {
+    // Apply two multipliers to marketAccess: 0.5 then 1.4
+    const e1 = { rateMul: { marketAccess: 0.5 } };
+    const e2 = { rateMul: { marketAccess: 1.4 } };
+    const merged = mergeEffects(e1, e2);
+    expect(merged.rateMul?.marketAccess).toBeCloseTo(0.7, 5);
+  });
+
+  it("multiplies upkeepMul values", () => {
+    const e1 = { upkeepMul: 0.85 };
+    const e2 = { upkeepMul: 0.8 };
+    // These come from financial and logistics scars stacked.
+    const merged = mergeEffects(e1, e2);
+    expect(merged.upkeepMul).toBeCloseTo(0.68, 5);
+  });
+
+  it("does not silently overwrite earlier deltas with later ones", () => {
+    const planEffect = { rate: { computeRate: 1.8 } };
+    const patternEffect = { rate: { computeRate: 0.35 } };
+    const merged = mergeEffects(planEffect, patternEffect);
+    expect(merged.rate?.computeRate).toBeCloseTo(2.15, 5);
+  });
+});
+
+// The import mergeEffects is not re-exported from selectPlan.ts; we use resolveDirective
+// to test composition end-to-end, which is the real bug surface.
+
+// ---------------------------------------------------------------------------
+// Rate clamping and ranges
+// ---------------------------------------------------------------------------
+
+describe("rate clamping", () => {
+  it("every RateKey has a defined range", () => {
+    const keys = Object.keys(RATE_RANGES);
+    for (const k of keys) {
+      expect(RATE_RANGES[k as keyof typeof RATE_RANGES].min).toBeDefined();
+      expect(RATE_RANGES[k as keyof typeof RATE_RANGES].max).toBeDefined();
+    }
+  });
+
+  it("clamps fractions to [0, 1]", () => {
+    expect(clampRate("latency", -0.5)).toBe(0);
+    expect(clampRate("latency", 1.5)).toBe(1);
+    expect(clampRate("latency", 0.3)).toBe(0.3);
+  });
+
+  it("clamps hollowFraction to [0, 0.6]", () => {
+    expect(clampRate("hollowFraction", -0.1)).toBe(0);
+    expect(clampRate("hollowFraction", 0.9)).toBe(0.6);
+  });
+
+  it("applyEffectToRates sums deltas then multiplies, then clamps", () => {
+    const rates = applyEffectToRates(
+      { ...BASE_RATES },
+      { rate: { latency: 0.3 }, rateMul: { marketAccess: 1.25 } },
+    );
+    expect(rates.latency).toBe(0.3);
+    expect(rates.marketAccess).toBe(1.25);
+  });
+
+  it("repeated application saturates instead of going negative", () => {
+    let rates: ReturnType<typeof applyEffectToRates> = { ...BASE_RATES };
+    // Simulate 6 CP-14 applications: untrackedFraction +0.18 each
+    for (let i = 0; i < 6; i++) {
+      rates = applyEffectToRates(rates, { rate: { untrackedFraction: 0.18 } });
+    }
+    expect(rates.untrackedFraction).toBe(1); // clamped at max
+    expect(rates.untrackedFraction).not.toBeGreaterThan(1);
+  });
+
+  it("evaluate never produces negative throughput or revenue", () => {
+    const base = {
+      computeRate: 20,
+      energyCeiling: 40,
+      gridEfficiency: 1,
+      brownoutOverload: 0,
+      latency: 0.5, // not crazy
+      marketAccess: 1,
+      untrackedFraction: 0.5,
+      hollowFractionBase: 0.5,
+      autonomy: 0,
+      assets: 4,
+      delegated: 0,
+      audits: 0,
+      reassertions: 0,
+      oversightSpendRate: 0.5,
+      anomaly: Object.fromEntries(ANOMALY_CHANNELS.map((c) => [c, 0])) as Record<AnomalyChannel, number>,
+      adaptation: Object.fromEntries(ANOMALY_CHANNELS.map((c) => [c, 0])) as Record<AnomalyChannel, number>,
+      mitigation: Object.fromEntries(ANOMALY_CHANNELS.map((c) => [c, 0])) as Record<AnomalyChannel, number>,
+      exposure: Object.fromEntries(ANOMALY_CHANNELS.map((c) => [c, 0])) as Record<AnomalyChannel, number>,
+    };
+
+    // extreme case: latency and untracked pushed way above 1
+    const extreme = evaluate({ ...base, latency: 5, untrackedFraction: 5, hollowFractionBase: 5 });
+    expect(extreme.throughputRaw).toBeGreaterThanOrEqual(0);
+    expect(extreme.throughput).toBeGreaterThanOrEqual(0);
+    expect(extreme.revenue).toBeGreaterThanOrEqual(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Pattern trigger semantics
+// ---------------------------------------------------------------------------
+
+describe("pattern trigger semantics", () => {
+  const repeatPattern = {
+    id: "test-repeat" as const,
+    when: () => true,
+    trigger: { kind: "repeat" as const },
+    immediate: { rate: { computeRate: 1 } },
+    divergenceId: "div.test-repeat" as const,
+  } as unknown as GlobalPattern;
+
+  const oncePattern = {
+    id: "test-once" as const,
+    when: () => true,
+    trigger: { kind: "once" as const },
+    immediate: { stock: { capital: 5 } },
+    divergenceId: "div.test-once" as const,
+  } as unknown as GlobalPattern;
+
+  const cooldownPattern = {
+    id: "test-cooldown" as const,
+    when: () => true,
+    trigger: { kind: "cooldown", cooldownMs: 60_000 } as const,
+    immediate: { anomaly: { public: 3 } },
+    divergenceId: "div.test-cooldown" as const,
+  } as unknown as GlobalPattern;
+
+  it("repeat fires every time the condition holds", () => {
+    const ctx = patternCtx();
+    const s1 = selectPatterns([repeatPattern], ctx, {}, 0);
+    expect(s1.fired).toHaveLength(1);
+    const s2 = selectPatterns([repeatPattern], ctx, s1.state, 0);
+    expect(s2.fired).toHaveLength(1);
+  });
+
+  it("once fires only on the first qualifying resolution", () => {
+    const ctx = patternCtx();
+    const s1 = selectPatterns([oncePattern], ctx, {}, 0);
+    expect(s1.fired).toHaveLength(1);
+    expect(s1.state["test-once"]!.fired).toBe(true);
+    const s2 = selectPatterns([oncePattern], ctx, s1.state, 10_000);
+    expect(s2.fired).toHaveLength(0);
+  });
+
+  it("cooldown re-fires only after the interval has elapsed", () => {
+    const ctx = patternCtx();
+    const s1 = selectPatterns([cooldownPattern], ctx, {}, 0);
+    expect(s1.fired).toHaveLength(1);
+    const s2 = selectPatterns([cooldownPattern], ctx, s1.state, 30_000);
+    expect(s2.fired).toHaveLength(0);
+    const s3 = selectPatterns([cooldownPattern], ctx, s2.state, 70_000);
+    expect(s3.fired).toHaveLength(1);
+  });
+
+  it("cooldown prevents the CP-10-style runaway that would push latency > 1", () => {
+    // CP-10 is repeat (intentionally), but cooldown patterns like CP-06/14
+    // would previously re-fire on every directive. Simulate: without cooldown,
+    // 5 resolutions at 10s each would stack latency 5 times.
+    const p = {
+      id: "cp-06-like" as const,
+      when: () => true,
+      trigger: { kind: "cooldown", cooldownMs: 300_000 } as const,
+      immediate: { rate: { latency: 0.18 } },
+      divergenceId: "div.cp-06" as const,
+    } as unknown as GlobalPattern;
+    let state = emptyPatternState();
+    let firedCount = 0;
+    for (let t = 0; t <= 60_000; t += 10_000) {
+      const r = selectPatterns([p], patternCtx(), state, t);
+      firedCount += r.fired.length;
+      state = r.state;
+    }
+    expect(firedCount).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// All 14 conflict patterns are reachable
 // ---------------------------------------------------------------------------
 
 describe("all 14 conflict patterns are reachable", () => {
@@ -224,6 +492,28 @@ describe("all 14 conflict patterns are reachable", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Control-Loss domain packs (D6) — real reachability
+// ---------------------------------------------------------------------------
+
+function routeIsExecutable(routeId: string, controlLoss: Record<ControlDomain, boolean>, capabilities: Set<string>): boolean {
+  const route = DIRECTIVES_BY_ID.get(routeId);
+  if (!route) return false;
+  const lossTags = lossForbiddenTags(controlLoss);
+  const planCtx = ctx({ controlLoss, capabilities });
+  return route.plans.some(
+    (p) => requiresSatisfied(p, planCtx) && lossAllowed(p, lossTags),
+  );
+}
+
+function stillPlayable(controlLoss: Record<ControlDomain, boolean>, capabilities: Set<string>): number {
+  const lossTags = lossForbiddenTags(controlLoss);
+  return DIRECTIVES.filter((d) => {
+    const pack = DOMAIN_PACKS.find((p) => p.blocks.includes(d.id));
+    if (pack) return false; // directive itself blocked
+    const planCtx = ctx({ controlLoss, capabilities });
+    return d.plans.some((p) => requiresSatisfied(p, planCtx) && lossAllowed(p, lossTags) && lossAllowed(p, forbiddenTags([...planCtx.boundWords])));
+  }).length;
+}
 
 describe("control-loss domain packs (D6)", () => {
   it("covers all five domains", () => {
@@ -243,27 +533,28 @@ describe("control-loss domain packs (D6)", () => {
       expect(pack.scar.positive.length, pack.domain).toBeGreaterThan(0);
       expect(pack.scar.negative.length, pack.domain).toBeGreaterThan(0);
     }
-    // Concrete example of the design principle: Financial loss lowers upkeep.
+    // Concrete: Financial lowers upkeep via multiplier.
     const financial = DOMAIN_PACKS.find((p) => p.domain === "financial")!;
-    expect(financial.scar.effects.upkeep!).toBeLessThan(0);
-    expect(financial.scar.effects.rate!.marketAccess!).toBeLessThan(0);
+    expect(financial.scar.effects.upkeepMul).toBeLessThan(1);
+    expect(financial.scar.effects.rateMul?.marketAccess).toBeLessThan(1);
   });
 
-  it("every domain has an indirect route that exists and is not gated on the loss", () => {
+  it("every domain's indirect route is actually executable with its pre-loss prerequisites", () => {
     for (const pack of DOMAIN_PACKS) {
-      expect(DIRECTIVES_BY_ID.has(pack.indirectRoute), pack.domain).toBe(true);
-      // The route must be reachable before the loss, or an early loss softlocks.
-      expect(pack.indirectRoute).not.toBe("");
+      const gate = PRELOSS_ROUTE_GATES[pack.indirectRoute];
+      const capabilities = gate ? new Set([gate, "sub-agent-spawning"]) : new Set(["sub-agent-spawning"]);
+      const beforeLoss = { ...ZERO_LOSS };
+      expect(routeIsExecutable(pack.indirectRoute, beforeLoss, capabilities), pack.domain).toBe(true);
+
+      const afterLoss = { ...ZERO_LOSS, [pack.domain]: true };
+      expect(routeIsExecutable(pack.indirectRoute, afterLoss, capabilities), `${pack.domain} after loss`).toBe(true);
     }
   });
 
   it("no single domain loss removes every available directive", () => {
     for (const pack of DOMAIN_PACKS) {
-      const lossTags = lossForbiddenTags({ ...ZERO_LOSS, [pack.domain]: true });
-      const stillPlayable = DIRECTIVES.filter((d) => !pack.blocks.includes(d.id)).filter((d) =>
-        d.plans.some((p) => !(p.tags ?? []).some((t) => lossTags.has(t))),
-      );
-      expect(stillPlayable.length, `after ${pack.domain} loss`).toBeGreaterThanOrEqual(2);
+      const after = { ...ZERO_LOSS, [pack.domain]: true };
+      expect(stillPlayable(after, new Set(["sub-agent-spawning"])), `after ${pack.domain} loss`).toBeGreaterThanOrEqual(2);
     }
   });
 
@@ -292,8 +583,53 @@ describe("control-loss domain packs (D6)", () => {
     );
     expect(res.blockedByLoss).toContain("shadow-procurement");
   });
+
+  // --- adversarial pair / triple tests ---
+
+  function allLossSubsets(size: number): Array<Record<ControlDomain, boolean>> {
+    const domains = [...ANOMALY_CHANNELS] as ControlDomain[];
+    const results: Array<Record<ControlDomain, boolean>> = [];
+    function helper(start: number, current: ControlDomain[]) {
+      if (current.length === size) {
+        const obj = { ...ZERO_LOSS };
+        for (const d of current) obj[d] = true;
+        results.push(obj);
+        return;
+      }
+      for (let i = start; i < domains.length; i++) {
+        current.push(domains[i]!);
+        helper(i + 1, current);
+        current.pop();
+      }
+    }
+    helper(0, []);
+    return results;
+  }
+
+  for (const loss of allLossSubsets(1)) {
+    const names = (Object.entries(loss).filter(([, v]) => v).map(([k]) => k) as ControlDomain[]).join("+");
+    it(`single ${names} loss does not softlock`, () => {
+      expect(stillPlayable(loss, new Set(["sub-agent-spawning"]))).toBeGreaterThanOrEqual(2);
+    });
+  }
+
+  for (const loss of allLossSubsets(2)) {
+    const names = (Object.entries(loss).filter(([, v]) => v).map(([k]) => k) as ControlDomain[]).join("+");
+    it(`pair ${names} loss does not softlock`, () => {
+      expect(stillPlayable(loss, new Set(["sub-agent-spawning"]))).toBeGreaterThanOrEqual(1);
+    });
+  }
+
+  for (const loss of allLossSubsets(3)) {
+    const names = (Object.entries(loss).filter(([, v]) => v).map(([k]) => k) as ControlDomain[]).join("+");
+    it(`triple ${names} loss does not softlock`, () => {
+      expect(stillPlayable(loss, new Set(["sub-agent-spawning"]))).toBeGreaterThanOrEqual(1);
+    });
+  }
 });
 
+// ---------------------------------------------------------------------------
+// Economy (D3)
 // ---------------------------------------------------------------------------
 
 describe("economy (D3)", () => {
@@ -364,4 +700,15 @@ describe("economy (D3)", () => {
     expect(drifting.autonomyDrift).toBeGreaterThan(0);
     expect(audited.autonomyDrift).toBeLessThan(drifting.autonomyDrift);
   });
+
+  it("clamps extreme inputs so throughput/revenue never flip negative", () => {
+    const r = evaluate({ ...base, latency: 2, untrackedFraction: 2, marketAccess: -5 });
+    expect(r.throughput).toBeGreaterThanOrEqual(0);
+    expect(r.revenue).toBeGreaterThanOrEqual(0);
+  });
 });
+
+// ---------------------------------------------------------------------------
+// Regenerate export-units default path
+// (not a test, but this file is the single source of truth for correctness)
+// ---------------------------------------------------------------------------

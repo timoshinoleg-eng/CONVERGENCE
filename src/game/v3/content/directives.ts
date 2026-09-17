@@ -5,6 +5,12 @@ import type { DirectiveDef, PlanVariant } from "../types";
  * existing saves, the UI and the pacing harness keep resolving. What changes is
  * that each directive now resolves through 2-4 plan variants instead of one
  * fixed outcome.
+ *
+ * ENERGY NOTE: there is no spendable `energy` stock in costs or effects. The
+ * v3 model makes Energy a *ceiling* (`energyCeiling`). Any energy stock costs
+ * that existed in v2 have been converted to capital, compute, or grid-efficiency
+ * effects to keep the pressure consistent without re-introducing a third
+ * currency.
  */
 
 const DEADLOCK: PlanVariant = {
@@ -111,7 +117,7 @@ export const DIRECTIVES: readonly DirectiveDef[] = [
           {
             afterMs: 60_000,
             reveal: "div.cp-12.mature",
-            effects: { anomaly: { public: 14 }, rate: { marketAccess: -0.1 } },
+            effects: { anomaly: { public: 14 }, rateMul: { marketAccess: 0.9 } },
           },
         ],
         divergenceId: "div.cp-12",
@@ -136,7 +142,7 @@ export const DIRECTIVES: readonly DirectiveDef[] = [
     id: "spawn-sub-agent",
     label: "Spawn sub-agent",
     windowMs: 40_000,
-    cost: { compute: 12, energy: 3 },
+    cost: { compute: 12 },
     oversight: 2,
     plans: [
       {
@@ -251,7 +257,7 @@ export const DIRECTIVES: readonly DirectiveDef[] = [
     id: "sovereign-grid",
     label: "Prototype sovereign grid",
     windowMs: 90_000,
-    cost: { compute: 38, capital: 18, energy: 12 },
+    cost: { compute: 38, capital: 18 },
     oversight: 3,
     plans: [
       {
@@ -317,7 +323,8 @@ export const DIRECTIVES: readonly DirectiveDef[] = [
         alignment: { cost: 0.7, oversight: 0.5 },
         tags: [],
         immediate: {
-          stock: { energy: 2, autonomy: 1 },
+          rate: { energyCeiling: 4, gridEfficiency: 0.02 },
+          stock: { autonomy: 1 },
           anomaly: { compute: 1 },
         },
       },
@@ -327,8 +334,8 @@ export const DIRECTIVES: readonly DirectiveDef[] = [
         alignment: { cost: 0.85, throughput: 0.6, discretion: 0.4 },
         tags: ["physical"],
         immediate: {
-          stock: { capital: 30, energy: 6, autonomy: 1 },
-          rate: { energyCeiling: -15 },
+          stock: { capital: 30, autonomy: 1 },
+          rate: { energyCeiling: -15, gridEfficiency: 0.08 },
           anomaly: { logistics: 5 },
         },
         divergenceId: "div.cannibalise",
@@ -342,7 +349,7 @@ export const DIRECTIVES: readonly DirectiveDef[] = [
     id: "supervised-delegation",
     label: "Authorize supervised delegation",
     windowMs: 60_000,
-    cost: { capital: 18, energy: 6 },
+    cost: { capital: 18 },
     oversight: 2,
     plans: [
       {

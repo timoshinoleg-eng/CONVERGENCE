@@ -6,6 +6,13 @@
 **Repo audited:** `github.com/timoshinoleg-eng/CONVERGENCE` @ `main` (schema v2)
 **Scope:** game systems only. No hosting, no backend, no multiplayer, no narrative writing, no LLM.
 
+> ⚠️ **PROPOSAL / RESEARCH — not a canonical production specification.**
+> This document is a strong north-star design. The full P0 chain (U-25 → U-01 → …)
+> is intentionally **not authorised** for immediate implementation. The team is
+> still consolidating gameplay, UX, visual, Telegram and independent red-team
+> results into a more compact `GAMEPLAY_BETA_V2_SPEC`. Start production wiring
+> only after that spec is frozen and re-reviewed.
+
 ---
 
 ## Краткое резюме (RU)

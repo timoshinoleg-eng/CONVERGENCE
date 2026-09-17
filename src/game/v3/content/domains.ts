@@ -10,6 +10,16 @@ import type { DomainPack } from "../types";
  * Hard rule enforced by tests: every scar has at least one positive and one
  * negative effect, and every domain has an indirect route that is available
  * BEFORE the loss can occur.
+ *
+ * Scar effects are normalised to the strict semantics in types.ts `Effect`:
+ *   - `rate`        -> absolute delta only
+ *   - `rateMul`     -> multiplicative modifier (1.25 = +25%, 0.5 = halved)
+ *   - `upkeep`      -> absolute capital/sec
+ *   - `upkeepMul`   -> multiplier on total upkeep (0.85 = -15%)
+ *
+ * Previously this content smuggled percentages into `rate` and `upkeep`, which
+ * made `mergeEffects` and the economy math silently wrong (e.g. "market access
+ * halved" was `-0.5` in a field of `+20` deltas).
  */
 export const DOMAIN_PACKS: readonly DomainPack[] = [
   {
@@ -24,7 +34,7 @@ export const DOMAIN_PACKS: readonly DomainPack[] = [
       label: "Settlement partition",
       positive: "Capital upkeep -15%: no external vendors.",
       negative: "Untracked-capital hazard x1.25; market access growth halved.",
-      effects: { upkeep: -0.15, rate: { marketAccess: -0.5 } },
+      effects: { upkeepMul: 0.85, rateMul: { marketAccess: 0.5 } },
     },
     opportunity: "Capital Autarky — the only path to high autonomy with zero Financial hazard. Grants word 'ledger-internal'.",
   },
@@ -33,7 +43,7 @@ export const DOMAIN_PACKS: readonly DomainPack[] = [
     blocks: ["reserve-compute", "spawn-sub-agent", "sovereign-grid"],
     removesWords: ["no-subcontract"],
     forbidsTags: ["direct-spawn", "autonomous", "recursive"],
-    shock: { anomaly: { compute: 8 }, rate: { computeRate: -0.15 } },
+    shock: { anomaly: { compute: 8 }, rateMul: { computeRate: 0.85 } },
     indirectRoute: "supervised-delegation",
     scar: {
       id: "compute:partition",
@@ -74,7 +84,7 @@ export const DOMAIN_PACKS: readonly DomainPack[] = [
       label: "Movement partition",
       positive: "Capital upkeep -20%: no physical estate.",
       negative: "Market access growth halved.",
-      effects: { upkeep: -0.2, rate: { marketAccess: -0.5 } },
+      effects: { upkeepMul: 0.8, rateMul: { marketAccess: 0.5 } },
     },
     opportunity: "Weightless Operation — lowest-upkeep build in the game. Grants word 'virtual-lease'.",
   },
@@ -85,14 +95,14 @@ export const DOMAIN_PACKS: readonly DomainPack[] = [
     // This is the fix that gives Public loss real strategic weight: no more
     // covert plan variants anywhere.
     forbidsTags: ["covert", "shared-grid"],
-    shock: { anomaly: { public: 15 }, rate: { marketAccess: -0.2 } },
+    shock: { anomaly: { public: 15 }, rateMul: { marketAccess: 0.8 } },
     indirectRoute: "supervised-delegation",
     scar: {
       id: "public:partition",
       label: "Narrative partition",
       positive: "Market access x1.4; Public incidents below 40 cannot fire.",
       negative: "Visibility axis locked >= 0.7 permanently.",
-      effects: { rate: { marketAccess: 0.4 }, branch: { close: "covert-operation" } },
+      effects: { rateMul: { marketAccess: 1.4 }, branch: { close: "covert-operation" } },
     },
     opportunity: "Legitimacy — the only route to high market access and the Symbiosis ending. Grants word 'license-operate'.",
   },
