@@ -63,7 +63,7 @@ describe("standalone browser adapter", () => {
     host.setVisibility("visible");
     host.fire("visibilitychange");
 
-    expect(seen).toEqual(["background", "active"]);
+    expect(seen).toEqual(["active", "background", "active"]);
   });
 
   it("does not hijack browser history for the back slot", () => {
@@ -140,7 +140,7 @@ describe("Capacitor adapter", () => {
     app.emitActive(true);
 
     expect(adapter.kind).toBe("capacitor");
-    expect(seen).toEqual(["background", "active"]);
+    expect(seen).toEqual(["active", "background", "active"]);
   });
 
   it("registers the native back listener only while a handler exists", async () => {
@@ -185,6 +185,6 @@ describe("Capacitor adapter", () => {
     host.setVisibility("hidden");
     host.fire("visibilitychange");
 
-    expect(seen).toEqual(["background"]);
+    expect(seen).toEqual(["active", "background"]);
   });
 });
