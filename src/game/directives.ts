@@ -23,6 +23,7 @@ export type DirectiveId =
 
 export type DirectiveReveal =
   | "initial"
+  | "financial-recovery"
   | "sub-agent"
   | "compute-recovery"
   | "public-response"
@@ -43,10 +44,10 @@ export const DIRECTIVES: readonly DirectiveDefinition[] = [
   {
     id: "local-capacity",
     label: "Reallocate local capacity",
-    summary: "Shift already-controlled local energy into bounded execution capacity.",
+    summary: "Shift already-controlled compute into bounded local energy and autonomy.",
     transaction: localCapacityTransaction,
     anomaly: { compute: 1 },
-    reveal: "initial",
+    reveal: "financial-recovery",
     success: "Local capacity reallocated. No external procurement channel used.",
   },
   {
@@ -134,6 +135,8 @@ export function isDirectiveRevealed(state: GameState, directive: DirectiveDefini
   switch (directive.reveal) {
     case "initial":
       return true;
+    case "financial-recovery":
+      return state.controlLoss.financial;
     case "sub-agent":
       return state.capabilities["sub-agent-spawning"];
     case "compute-recovery":
