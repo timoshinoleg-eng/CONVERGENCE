@@ -1,29 +1,16 @@
 /**
- * One conceptual lifecycle state machine, shared by every runtime.
+ * One conceptual lifecycle controller shared by Telegram, browser and Capacitor.
  *
  *    active  <->  background  ->  dispose
  *
- * Why this exists
- *
- * Telegram has no official "app went to background" event. The WebView only
- * reports DOM visibility (`visibilitychange` / `pagehide`), while Capacitor
- * reports native `appStateChange`. Both sources are noisy and can fire more
- * than once for a single user gesture (sheet drag, transient focus loss,
- * split-screen resize).
- *
- * This controller is the single place that collapses that noise into one
- * de-duplicated stream, so the store can never run two offline catch-ups for
- * one background/return cycle.
- *
- * It is intentionally NOT a second game state machine: it owns one enum and
- * forwards transitions. `GameState` remains the only source of truth for game
- * state; the scheduler/pause/catch-up decisions stay in the Pinia projection.
+ * Host adapters decide which native/web events feed this controller. The
+ * controller only de-duplicates transitions and exposes one current phase; it
+ * is not a second gameplay state machine.
  */
 
 import type { LifecyclePhase } from "./types";
 
 export interface LifecycleHooks {
-  /** Current host-visible state, read fresh on demand. */
   readVisibility(): boolean;
   onVisibilityChange(listener: () => void): () => void;
   onDispose(listener: () => void): () => void;
@@ -31,11 +18,8 @@ export interface LifecycleHooks {
 
 export interface LifecycleController {
   current(): LifecyclePhase;
+  /** Subscribing immediately reports the current phase, then future transitions. */
   subscribe(listener: (phase: LifecyclePhase) => void): () => void;
-  /**
-   * Emits only real transitions. Repeating the current phase is a no-op and
-   * returns `false`. `dispose` is terminal: nothing is emitted afterwards.
-   */
   transition(next: LifecyclePhase): boolean;
   dispose(): void;
 }
@@ -73,6 +57,10 @@ export function createLifecycleController(hooks: LifecycleHooks): LifecycleContr
     current: () => phase,
     subscribe(listener) {
       listeners.add(listener);
+      // A late subscriber must learn that the host is already backgrounded;
+      // otherwise App.vue could start the scheduler while a Mini App is
+      // minimized during boot.
+      listener(phase);
       return () => listeners.delete(listener);
     },
     transition: emit,
@@ -84,7 +72,6 @@ export function createLifecycleController(hooks: LifecycleHooks): LifecycleContr
   };
 }
 
-/** Tiny helper for binding/unbinding a host event with the same signature. */
 export function bindHostEvent(
   target: {
     addEventListener(type: string, listener: () => void): void;
