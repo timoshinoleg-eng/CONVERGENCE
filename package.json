@@ -19,10 +19,12 @@
     "@capacitor/app": "8.0.1",
     "@capacitor/core": "8.5.2",
     "@capacitor/preferences": "8.0.1",
+    "@casl/ability": "7.0.1",
     "@idlekitjs/economy": "0.1.1",
     "@yggdrasil-forge/core": "1.0.0",
     "inkjs": "2.4.0",
     "pinia": "4.0.3",
+    "rot-js": "2.2.1",
     "vue": "3.5.42",
     "zod": "4.3.6"
   },
