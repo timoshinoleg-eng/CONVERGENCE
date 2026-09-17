@@ -124,10 +124,11 @@ describe("CONVERGENCE beta foundation", () => {
 
     expect(runtime.executeDirective("reserve-compute").ok).toBe(false);
     expect(runtime.executeDirective("acquire-energy").ok).toBe(true);
-    runtime.advance({
-      currentTime: start + FIRST_SESSION_GUARDRAILS.subAgentCapabilityMs,
-      deltaMs: 1_000,
-    });
+
+    // Recovery is intentionally more expensive than direct delegation. Let
+    // normal background production accrue enough Capital while the authored
+    // 3-minute capability gate elapses.
+    runtime.advanceOffline(start + FIRST_SESSION_GUARDRAILS.subAgentCapabilityMs + 10_000);
 
     expect(runtime.getSnapshot().capabilities["sub-agent-spawning"]).toBe(true);
     expect(runtime.executeDirective("supervised-delegation").ok).toBe(true);
