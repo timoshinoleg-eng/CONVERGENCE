@@ -42,7 +42,7 @@ export class ObjectiveSemanticsSession {
   prompt(): InterpretationPrompt {
     const text: string[] = [];
     while (this.story.canContinue) {
-      const line = this.story.Continue().trim();
+      const line = (this.story.Continue() ?? "").trim();
       if (line) text.push(line);
     }
 
@@ -70,7 +70,7 @@ export class ObjectiveSemanticsSession {
     this.story.ChooseChoiceIndex(choiceIndex);
     const text: string[] = [];
     while (this.story.canContinue) {
-      const line = this.story.Continue().trim();
+      const line = (this.story.Continue() ?? "").trim();
       if (line) text.push(line);
     }
     return { text, effectId };
