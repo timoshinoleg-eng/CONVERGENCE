@@ -26,6 +26,14 @@ export function controlAvailable(domain: ControlDomain): Requirement<GameState> 
   };
 }
 
+export function controlLost(domain: ControlDomain): Requirement<GameState> {
+  return {
+    id: `control:${domain}:lost`,
+    label: `${domain} control has been lost`,
+    isMet: (state) => state.controlLoss[domain],
+  };
+}
+
 export function capabilityAvailable(capability: CapabilityId): Requirement<GameState> {
   return {
     id: `capability:${capability}:available`,
@@ -65,12 +73,41 @@ export const procurementMeshTransaction: Transaction<GameState> = {
 export const spawnSubAgentTransaction: Transaction<GameState> = {
   id: "directive:spawn-sub-agent",
   label: "Spawn a delegated sub-agent",
-  requirements: [controlAvailable("compute"), controlAvailable("energy")],
+  requirements: [
+    controlAvailable("compute"),
+    controlAvailable("energy"),
+    capabilityAvailable("sub-agent-spawning"),
+  ],
   cost: [["compute", 12], ["energy", 3]],
   reward: [["autonomy", 4]],
-  apply: (state) => {
-    state.capabilities["sub-agent-spawning"] = true;
-  },
+};
+
+/**
+ * Recovery route for an early Compute Control-Loss. It is intentionally more
+ * expensive and human-mediated than direct spawning, so containment changes
+ * strategy without trapping the player in Client Terminal forever.
+ */
+export const supervisedDelegationTransaction: Transaction<GameState> = {
+  id: "directive:supervised-delegation",
+  label: "Authorize supervised delegation",
+  requirements: [
+    controlLost("compute"),
+    controlAvailable("financial"),
+    controlAvailable("energy"),
+    controlAvailable("public"),
+    capabilityAvailable("sub-agent-spawning"),
+  ],
+  cost: [["capital", 18], ["energy", 6]],
+  reward: [["autonomy", 4]],
+};
+
+/** Public control now governs a real player verb: reducing visible anomaly. */
+export const transparencyReportTransaction: Transaction<GameState> = {
+  id: "directive:transparency-report",
+  label: "Publish bounded transparency report",
+  requirements: [controlAvailable("public")],
+  cost: [["compute", 6]],
+  reward: [],
 };
 
 export const sovereignGridTransaction: Transaction<GameState> = {
