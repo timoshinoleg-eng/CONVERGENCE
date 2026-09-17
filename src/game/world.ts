@@ -1,24 +1,15 @@
 /**
- * Geography extension point - TYPES ONLY, no content.
+ * Geography extension point — TYPES ONLY, no content and no persistence yet.
  *
- * Question this file answers: can CONVERGENCE grow
+ * This file answers whether CONVERGENCE can grow into:
  *
  *   World -> Countries -> Russia -> Moscow -> Nodes
  *
- * without rewriting the core? Answer: yes, because the slot is additive and
- * optional. `GameState.world` is declared but left `undefined` by
- * `createInitialGameState()`, which means:
- *
- *   - `structuredClone` / `JSON.stringify` produce a byte-identical payload for
- *     every existing save (`undefined` is omitted by `JSON.stringify`);
- *   - the existing zod schema accepts old saves unchanged;
- *   - no save migration and no schema version bump is required;
- *   - simulation, economy, narrative and directives ignore the field entirely
- *     until region content is specified.
- *
- * Deliberately NOT included: any Moscow/region content, regional bonuses,
- * region-specific events, world map UI, or gameplay rebalance. Those belong to
- * the product specification that another model is producing.
+ * without rewriting simulation/economy/narrative. It deliberately does NOT add
+ * a `world` field to save schema v2. Persistent geography will be introduced
+ * together with an explicit save migration (v2 -> v3) once Moscow content is
+ * accepted. That prevents older v2 clients from silently stripping future
+ * world state and overwriting it.
  */
 
 /** Stable, lowercase, dash-separated identifier, e.g. `ru`, `moscow`. */
@@ -34,11 +25,8 @@ export interface RegionDefinition {
   /** Parent country id, e.g. `ru`. */
   countryId: WorldEntityId;
   label: string;
-  /** Optional unlock gate expressed against canonical GameState. */
   unlock?: {
-    /** Capability that must already be unlocked. */
     capability?: string;
-    /** Minimum phase required to reveal the region. */
     phase?: "client-terminal" | "distributed-syndicate" | "technosphere";
   };
 }
@@ -47,17 +35,12 @@ export interface NodeDefinition {
   id: WorldEntityId;
   regionId: WorldEntityId;
   label: string;
-  /**
-   * Which of the five anomaly channels this node feeds. Reuses the existing
-   * `AnomalyChannel` union so no new pressure model is introduced.
-   */
   channel?: "financial" | "compute" | "energy" | "logistics" | "public";
 }
 
 export interface RegionState {
   id: WorldEntityId;
   unlocked: boolean;
-  /** Node ids discovered inside the region. */
   nodes: WorldEntityId[];
 }
 
@@ -69,7 +52,6 @@ export interface NodeState {
   active: boolean;
 }
 
-/** Additive container. Presence of this object means geography is enabled. */
 export interface WorldState {
   countries: Record<WorldEntityId, CountryDefinition>;
   regions: Record<WorldEntityId, RegionState>;
@@ -80,10 +62,7 @@ export function createEmptyWorld(): WorldState {
   return { countries: {}, regions: {}, nodes: {} };
 }
 
-/**
- * Pure shape guard. Used by the save schema and available to future content
- * loaders. It validates structure only - it never invents gameplay meaning.
- */
+/** Structural guard for future content loaders and the future v3 save schema. */
 export function isValidWorldShape(value: unknown): value is WorldState {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Partial<WorldState>;
