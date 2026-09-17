@@ -66,6 +66,7 @@ export class ConvergenceRuntime {
 
     if (interpretation.effectId === "reserve-compute") {
       const outcome = this.executeDirective("reserve-compute", false);
+      this.publish();
       return { ...outcome, text: [...interpretation.text, ...outcome.text] };
     }
 
