@@ -190,6 +190,7 @@ export function serializeSave(state: GameState, generation: number, savedAt = Da
 export function deserializeSave(serialized: string): SaveEnvelope {
   const parsed = JSON.parse(serialized) as unknown;
   const base = envelopeSchema.parse(parsed);
+  if (checksumData(base.data) !== base.checksum) throw new Error("Save checksum mismatch");
   const migrated = envelopeSchema.parse(migrateEnvelope(base as unknown as Record<string, unknown>));
   if (checksumData(migrated.data) !== migrated.checksum) throw new Error("Save checksum mismatch");
   const data = gameStateSchema.parse(migrated.data) as GameState;
