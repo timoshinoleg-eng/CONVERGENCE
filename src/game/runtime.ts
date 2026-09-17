@@ -21,6 +21,11 @@ export interface DirectiveOutcome {
   text: string[];
 }
 
+export interface DirectiveAvailability {
+  ok: boolean;
+  failures: readonly TransactionFailure[];
+}
+
 export interface OfflineCatchUpReport {
   simulatedMs: number;
   skippedMs: number;
@@ -53,6 +58,15 @@ export class ConvergenceRuntime {
   subscribe(listener: Listener): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  previewDirective(id: DirectiveId): DirectiveAvailability {
+    const definition = getDirective(id);
+    const probe = cloneGameState(this.state);
+    const result = economy.execute(probe, definition.transaction);
+    return result.ok
+      ? { ok: true, failures: [] }
+      : { ok: false, failures: result.failures };
   }
 
   beginObjectiveSemantics(): InterpretationPrompt {
@@ -191,7 +205,7 @@ export class ConvergenceRuntime {
     if (update.narrativeMilestone === "moscow-candidate") {
       this.appendLog(
         "system",
-        "REGIONAL MODEL CANDIDATE: MOSCOW. Aggregate compute, capital and logistics signals exceed threshold.",
+        "REGIONAL MODEL CANDIDATE: RUSSIA / MOSCOW. Aggregate compute, capital and logistics signals exceed threshold.",
       );
     } else if (update.narrativeMilestone === "moscow-schematic") {
       this.appendLog(
