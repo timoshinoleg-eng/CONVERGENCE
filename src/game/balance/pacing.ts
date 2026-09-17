@@ -1,11 +1,14 @@
 import { DIRECTIVES, type DirectiveId } from "../directives";
 import { createInitialGameState, type ControlDomain, type GameState, type Phase } from "../model";
+import { FIRST_SESSION_GUARDRAILS } from "../progression";
 import { ConvergenceRuntime } from "../runtime";
 
 export interface PacingMilestones {
   firstDirectiveMs: number | null;
   subAgentCapabilityMs: number | null;
   distributedSyndicateMs: number | null;
+  moscowCandidateMs: number | null;
+  moscowSchematicMs: number | null;
   sovereignGridMs: number | null;
   technosphereMs: number | null;
   firstContainmentMs: number | null;
@@ -58,8 +61,17 @@ function canExecute(state: GameState, id: DirectiveId): boolean {
 }
 
 function aggressiveDirective(state: GameState): DirectiveId | null {
-  if (!state.capabilities["sub-agent-spawning"] && canExecute(state, "reserve-compute")) {
-    return "reserve-compute";
+  // Do not spam reserve-compute while waiting for the authored delegation
+  // reveal. One successful directive is enough to seed the capability path.
+  if (!state.capabilities["sub-agent-spawning"]) {
+    if (state.resources.autonomy < 1 && canExecute(state, "reserve-compute")) {
+      return "reserve-compute";
+    }
+    return null;
+  }
+
+  if (state.controlLoss.compute && canExecute(state, "supervised-delegation")) {
+    return "supervised-delegation";
   }
   if (state.resources.autonomy < 5 && canExecute(state, "spawn-sub-agent")) {
     return "spawn-sub-agent";
@@ -73,29 +85,40 @@ function aggressiveDirective(state: GameState): DirectiveId | null {
   }
   if (state.resources.autonomy < 20) {
     if (canExecute(state, "spawn-sub-agent")) return "spawn-sub-agent";
+    if (canExecute(state, "supervised-delegation")) return "supervised-delegation";
     if (canExecute(state, "acquire-energy")) return "acquire-energy";
     return null;
+  }
+  if (state.anomaly.public >= 35 && canExecute(state, "transparency-report")) {
+    return "transparency-report";
   }
   if (canExecute(state, "procurement-mesh")) return "procurement-mesh";
   return null;
 }
 
 function infrastructureFirstDirective(state: GameState): DirectiveId | null {
+  if (!state.capabilities["sub-agent-spawning"] && state.resources.autonomy >= 1) return null;
   if (state.resources.energy < 28 && canExecute(state, "acquire-energy")) {
     return "acquire-energy";
   }
   return aggressiveDirective(state);
 }
 
-function firstExecutableDirective(state: GameState): DirectiveId | null {
-  const priority: DirectiveId[] = [
-    "reserve-compute",
-    "spawn-sub-agent",
-    "acquire-energy",
-    "procurement-mesh",
-    "sovereign-grid",
-  ];
-  return priority.find((id) => canExecute(state, id)) ?? null;
+function computeRecoveryDirective(state: GameState): DirectiveId | null {
+  if (!state.capabilities["sub-agent-spawning"]) {
+    // Establish one unit of autonomy, then wait for the 3-minute capability
+    // reveal instead of repeatedly hammering the energy channel.
+    if (state.resources.autonomy < 1 && canExecute(state, "acquire-energy")) {
+      return "acquire-energy";
+    }
+    return null;
+  }
+  if (canExecute(state, "supervised-delegation")) return "supervised-delegation";
+  if (state.anomaly.public >= 25 && canExecute(state, "transparency-report")) {
+    return "transparency-report";
+  }
+  if (state.resources.energy < 20 && canExecute(state, "acquire-energy")) return "acquire-energy";
+  return null;
 }
 
 function recordMilestones(
@@ -117,6 +140,20 @@ function recordMilestones(
     && next.meta.phase === "distributed-syndicate"
   ) {
     milestones.distributedSyndicateMs = elapsedMs;
+  }
+  if (
+    milestones.moscowCandidateMs === null
+    && previous.narrative.episode !== "moscow-candidate-01"
+    && next.narrative.episode === "moscow-candidate-01"
+  ) {
+    milestones.moscowCandidateMs = elapsedMs;
+  }
+  if (
+    milestones.moscowSchematicMs === null
+    && previous.narrative.episode !== "moscow-schematic-01"
+    && next.narrative.episode === "moscow-schematic-01"
+  ) {
+    milestones.moscowSchematicMs = elapsedMs;
   }
   if (
     milestones.sovereignGridMs === null
@@ -150,6 +187,8 @@ export function runPacingScenario(definition: ScenarioDefinition): PacingScenari
     firstDirectiveMs: null,
     subAgentCapabilityMs: null,
     distributedSyndicateMs: null,
+    moscowCandidateMs: null,
+    moscowSchematicMs: null,
     sovereignGridMs: null,
     technosphereMs: null,
     firstContainmentMs: definition.initialContainment ? 0 : null,
@@ -202,13 +241,16 @@ export function analyzeControlLossCoverage(): ControlLossCoverage[] {
   baseline.capabilities["sub-agent-spawning"] = true;
   baseline.capabilities["sovereign-power-grid"] = true;
 
+  const baselineExecutable = new Set(
+    DIRECTIVES.filter((directive) => canExecute(baseline, directive.id)).map((directive) => directive.id),
+  );
+
   return (Object.keys(baseline.controlLoss) as ControlDomain[]).map((domain) => {
     const runtime = new ConvergenceRuntime(baseline);
     runtime.applyContainment(domain);
     const state = runtime.getSnapshot();
-    const blockedDirectives = DIRECTIVES
-      .filter((directive) => !canExecute(state, directive.id))
-      .map((directive) => directive.id);
+    const blockedDirectives = [...baselineExecutable]
+      .filter((id) => !canExecute(state, id));
     return { domain, blockedDirectives };
   });
 }
@@ -242,7 +284,7 @@ export function runBetaPacingSuite(): PacingSuiteReport {
       durationMs: 30 * 60_000,
       actionIntervalMs: 10_000,
       initialContainment: "compute",
-      chooseDirective: firstExecutableDirective,
+      chooseDirective: computeRecoveryDirective,
     },
   ];
 
@@ -254,10 +296,12 @@ export function runBetaPacingSuite(): PacingSuiteReport {
 }
 
 export const PROVISIONAL_FIRST_SESSION_TARGETS = {
-  firstDirectiveMs: { min: 15_000, max: 120_000 },
-  subAgentCapabilityMs: { min: 120_000, max: 360_000 },
-  distributedSyndicateMs: { min: 240_000, max: 720_000 },
-  technosphereMs: { min: 1_200_000, max: 1_800_000 },
+  firstDirectiveMs: { min: 0, max: 120_000 },
+  subAgentCapabilityMs: { min: FIRST_SESSION_GUARDRAILS.subAgentCapabilityMs, max: 6 * 60_000 },
+  distributedSyndicateMs: { min: FIRST_SESSION_GUARDRAILS.distributedSyndicateMs, max: 10 * 60_000 },
+  moscowCandidateMs: { min: 10 * 60_000, max: 15 * 60_000 },
+  moscowSchematicMs: { min: 16 * 60_000, max: 22 * 60_000 },
+  technosphereMs: { min: FIRST_SESSION_GUARDRAILS.technosphereMs, max: 30 * 60_000 },
 } as const;
 
 export function evaluateProvisionalPacing(report: PacingScenarioReport): string[] {
@@ -267,6 +311,8 @@ export function evaluateProvisionalPacing(report: PacingScenarioReport): string[
     ["firstDirectiveMs", report.milestones.firstDirectiveMs],
     ["subAgentCapabilityMs", report.milestones.subAgentCapabilityMs],
     ["distributedSyndicateMs", report.milestones.distributedSyndicateMs],
+    ["moscowCandidateMs", report.milestones.moscowCandidateMs],
+    ["moscowSchematicMs", report.milestones.moscowSchematicMs],
     ["technosphereMs", report.milestones.technosphereMs],
   ] as const;
 
