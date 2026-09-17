@@ -1,18 +1,20 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useGameStore } from "./stores/game";
-import { getPlatform, type LifecyclePhase } from "./platform";
+import { getPlatform, type LifecyclePhase, type StorageKind } from "./platform";
 
 const game = useGameStore();
 const platform = getPlatform();
 const saveStatus = ref("");
 const storageWarning = ref(false);
+const storageKind = ref<StorageKind>(platform.storage.kind);
 const isDev = import.meta.env.DEV;
 const buildId = (import.meta.env.VITE_BUILD_ID || "dev").slice(0, 12);
-const platformLabel = computed(() => `${platform.kind.toUpperCase()} · ${platform.storage.kind}`);
+const platformLabel = computed(() => `${platform.kind.toUpperCase()} · ${storageKind.value}`);
 let lifecycleHandle: (() => void) | null = null;
 
 function refreshStorageWarning(): void {
+  storageKind.value = platform.storage.kind;
   storageWarning.value = !platform.storage.durable;
 }
 
@@ -26,9 +28,6 @@ onMounted(async () => {
   await platform.ready();
   await game.start();
   refreshStorageWarning();
-  // Subscribing immediately delivers the host's current lifecycle phase. This
-  // closes the boot race where Telegram can be minimized while ready/start are
-  // still resolving.
   lifecycleHandle = platform.onLifecycle((phase: LifecyclePhase) => {
     if (phase === "background") {
       void game.pauseForBackground().then(refreshStorageWarning);
