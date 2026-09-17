@@ -48,6 +48,19 @@ export const syndicatePhaseAvailable: Requirement<GameState> = {
   isMet: (state) => state.meta.phase !== "client-terminal",
 };
 
+/**
+ * Uses only already-controlled local capacity. This gives the player a bounded
+ * autonomy seed even when Financial Control-Loss removes every external
+ * procurement action; it cannot replace the stronger financial directives.
+ */
+export const localCapacityTransaction: Transaction<GameState> = {
+  id: "directive:local-capacity",
+  label: "Reallocate local capacity",
+  requirements: [controlAvailable("compute"), controlAvailable("energy")],
+  cost: [["energy", 2]],
+  reward: [["compute", 4], ["autonomy", 1]],
+};
+
 export const reserveComputeTransaction: Transaction<GameState> = {
   id: "directive:reserve-compute",
   label: "Reserve additional compute",
