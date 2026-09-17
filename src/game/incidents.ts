@@ -16,10 +16,11 @@ export interface IncidentOutcome {
 const INVESTIGATION_PRESSURE = 18;
 const CONTAINMENT_PRESSURE = 60;
 
-function stageForPressure(pressure: number): ContainmentStage {
-  if (pressure >= CONTAINMENT_PRESSURE) return "contained";
-  if (pressure >= INVESTIGATION_PRESSURE) return "pressure";
-  return "investigation";
+function nextStage(previous: ContainmentStage, pressure: number): ContainmentStage {
+  if (previous === "clear") return "investigation";
+  if (previous === "investigation" && pressure >= INVESTIGATION_PRESSURE) return "pressure";
+  if (previous === "pressure" && pressure >= CONTAINMENT_PRESSURE) return "contained";
+  return previous;
 }
 
 function incidentLabel(channel: AnomalyChannel, stage: ContainmentStage): string {
@@ -67,7 +68,7 @@ export function applyIncident(
 
   track.incidents += 1;
   track.pressure = Math.min(100, track.pressure + pressureAdded);
-  track.stage = stageForPressure(track.pressure);
+  track.stage = nextStage(previousStage, track.pressure);
 
   const containmentTriggered = track.stage === "contained" && previousStage !== "contained";
   if (containmentTriggered) {
@@ -96,6 +97,5 @@ export function reducePressure(
   if (track.stage === "contained") return;
   track.pressure = Math.max(0, track.pressure - Math.max(0, amount));
   if (track.pressure <= 0) track.stage = "clear";
-  else if (track.pressure < INVESTIGATION_PRESSURE) track.stage = "investigation";
-  else track.stage = "pressure";
+  else if (track.stage === "pressure" && track.pressure < INVESTIGATION_PRESSURE) track.stage = "investigation";
 }
