@@ -43,10 +43,10 @@ export function advanceSimulation(
   for (const channel of ANOMALY_CHANNELS) {
     state.anomaly[channel] = Math.max(0, state.anomaly[channel] - deltaSeconds * 0.002);
 
-    if (state.containment[channel].stage !== "contained") {
-      const recovery = deltaSeconds * 0.004 * (1 + state.containment[channel].adaptation * 0.25);
-      reducePressure(state, channel, recovery);
-    }
+    if (state.containment[channel].stage === "contained") continue;
+
+    const recovery = deltaSeconds * 0.004 * (1 + state.containment[channel].adaptation * 0.25);
+    reducePressure(state, channel, recovery);
 
     const probability = incidentProbability(state.anomaly[channel], deltaSeconds);
     if (probability > 0 && rng.chance(probability)) {
