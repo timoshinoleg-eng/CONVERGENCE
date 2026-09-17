@@ -236,7 +236,13 @@ export function runPacingScenario(definition: ScenarioDefinition): PacingScenari
 }
 
 export function analyzeControlLossCoverage(): ControlLossCoverage[] {
+  // Analyze control amputation against a mature state where all current
+  // directive classes that belong to the Syndicate are genuinely executable.
+  // Otherwise phase requirements would hide logistics/sovereign verbs from the
+  // baseline and incorrectly report that some Control-Loss domains remove no
+  // language at all.
   const baseline = createInitialGameState(1_000, 4242);
+  baseline.meta.phase = "distributed-syndicate";
   baseline.resources = { compute: 1_000, capital: 1_000, energy: 1_000, autonomy: 20 };
   baseline.capabilities["sub-agent-spawning"] = true;
   baseline.capabilities["sovereign-power-grid"] = true;
