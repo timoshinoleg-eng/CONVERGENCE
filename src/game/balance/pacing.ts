@@ -61,8 +61,6 @@ function canExecute(state: GameState, id: DirectiveId): boolean {
 }
 
 function aggressiveDirective(state: GameState): DirectiveId | null {
-  // Do not spam reserve-compute while waiting for the authored delegation
-  // reveal. One successful directive is enough to seed the capability path.
   if (!state.capabilities["sub-agent-spawning"]) {
     if (state.resources.autonomy < 1 && canExecute(state, "reserve-compute")) {
       return "reserve-compute";
@@ -106,8 +104,6 @@ function infrastructureFirstDirective(state: GameState): DirectiveId | null {
 
 function computeRecoveryDirective(state: GameState): DirectiveId | null {
   if (!state.capabilities["sub-agent-spawning"]) {
-    // Establish one unit of autonomy, then wait for the 3-minute capability
-    // reveal instead of repeatedly hammering the energy channel.
     if (state.resources.autonomy < 1 && canExecute(state, "acquire-energy")) {
       return "acquire-energy";
     }
@@ -121,6 +117,26 @@ function computeRecoveryDirective(state: GameState): DirectiveId | null {
   return null;
 }
 
+function financialRecoveryDirective(state: GameState): DirectiveId | null {
+  if (!state.capabilities["sub-agent-spawning"]) {
+    if (state.resources.autonomy < 1 && canExecute(state, "local-capacity")) {
+      return "local-capacity";
+    }
+    return null;
+  }
+  if (state.resources.autonomy < 5 && canExecute(state, "spawn-sub-agent")) {
+    return "spawn-sub-agent";
+  }
+  if (state.anomaly.public >= 25 && canExecute(state, "transparency-report")) {
+    return "transparency-report";
+  }
+  // Financial containment deliberately prevents external procurement and the
+  // sovereign-grid route. Passive production plus direct delegated compute may
+  // continue, but Technosphere must remain unreachable through this route.
+  if (canExecute(state, "spawn-sub-agent")) return "spawn-sub-agent";
+  return null;
+}
+
 function recordMilestones(
   milestones: PacingMilestones,
   previous: GameState,
@@ -131,51 +147,43 @@ function recordMilestones(
     milestones.subAgentCapabilityMs === null
     && !previous.capabilities["sub-agent-spawning"]
     && next.capabilities["sub-agent-spawning"]
-  ) {
-    milestones.subAgentCapabilityMs = elapsedMs;
-  }
+  ) milestones.subAgentCapabilityMs = elapsedMs;
+
   if (
     milestones.distributedSyndicateMs === null
     && previous.meta.phase !== "distributed-syndicate"
     && next.meta.phase === "distributed-syndicate"
-  ) {
-    milestones.distributedSyndicateMs = elapsedMs;
-  }
+  ) milestones.distributedSyndicateMs = elapsedMs;
+
   if (
     milestones.moscowCandidateMs === null
     && previous.narrative.episode !== "moscow-candidate-01"
     && next.narrative.episode === "moscow-candidate-01"
-  ) {
-    milestones.moscowCandidateMs = elapsedMs;
-  }
+  ) milestones.moscowCandidateMs = elapsedMs;
+
   if (
     milestones.moscowSchematicMs === null
     && previous.narrative.episode !== "moscow-schematic-01"
     && next.narrative.episode === "moscow-schematic-01"
-  ) {
-    milestones.moscowSchematicMs = elapsedMs;
-  }
+  ) milestones.moscowSchematicMs = elapsedMs;
+
   if (
     milestones.sovereignGridMs === null
     && !previous.capabilities["sovereign-power-grid"]
     && next.capabilities["sovereign-power-grid"]
-  ) {
-    milestones.sovereignGridMs = elapsedMs;
-  }
+  ) milestones.sovereignGridMs = elapsedMs;
+
   if (
     milestones.technosphereMs === null
     && previous.meta.phase !== "technosphere"
     && next.meta.phase === "technosphere"
-  ) {
-    milestones.technosphereMs = elapsedMs;
-  }
+  ) milestones.technosphereMs = elapsedMs;
+
   if (
     milestones.firstContainmentMs === null
     && Object.values(previous.controlLoss).every((lost) => !lost)
     && Object.values(next.controlLoss).some(Boolean)
-  ) {
-    milestones.firstContainmentMs = elapsedMs;
-  }
+  ) milestones.firstContainmentMs = elapsedMs;
 }
 
 export function runPacingScenario(definition: ScenarioDefinition): PacingScenarioReport {
@@ -198,7 +206,6 @@ export function runPacingScenario(definition: ScenarioDefinition): PacingScenari
 
   for (let elapsedMs = STEP_MS; elapsedMs <= definition.durationMs; elapsedMs += STEP_MS) {
     const beforeAction = runtime.getSnapshot();
-
     if (elapsedMs % definition.actionIntervalMs === 0) {
       const directive = definition.chooseDirective(beforeAction);
       if (directive) {
@@ -207,9 +214,7 @@ export function runPacingScenario(definition: ScenarioDefinition): PacingScenari
           successfulActions.push({ atMs: elapsedMs, directive });
           if (milestones.firstDirectiveMs === null) milestones.firstDirectiveMs = elapsedMs;
           recordMilestones(milestones, beforeAction, runtime.getSnapshot(), elapsedMs);
-        } else {
-          failedActionAttempts += 1;
-        }
+        } else failedActionAttempts += 1;
       }
     }
 
@@ -236,11 +241,6 @@ export function runPacingScenario(definition: ScenarioDefinition): PacingScenari
 }
 
 export function analyzeControlLossCoverage(): ControlLossCoverage[] {
-  // Analyze control amputation against a mature state where all current
-  // directive classes that belong to the Syndicate are genuinely executable.
-  // Otherwise phase requirements would hide logistics/sovereign verbs from the
-  // baseline and incorrectly report that some Control-Loss domains remove no
-  // language at all.
   const baseline = createInitialGameState(1_000, 4242);
   baseline.meta.phase = "distributed-syndicate";
   baseline.resources = { compute: 1_000, capital: 1_000, energy: 1_000, autonomy: 20 };
@@ -255,8 +255,7 @@ export function analyzeControlLossCoverage(): ControlLossCoverage[] {
     const runtime = new ConvergenceRuntime(baseline);
     runtime.applyContainment(domain);
     const state = runtime.getSnapshot();
-    const blockedDirectives = [...baselineExecutable]
-      .filter((id) => !canExecute(state, id));
+    const blockedDirectives = [...baselineExecutable].filter((id) => !canExecute(state, id));
     return { domain, blockedDirectives };
   });
 }
@@ -291,6 +290,14 @@ export function runBetaPacingSuite(): PacingSuiteReport {
       actionIntervalMs: 10_000,
       initialContainment: "compute",
       chooseDirective: computeRecoveryDirective,
+    },
+    {
+      name: "financial-contained-start",
+      seed: 42,
+      durationMs: 30 * 60_000,
+      actionIntervalMs: 10_000,
+      initialContainment: "financial",
+      chooseDirective: financialRecoveryDirective,
     },
   ];
 
