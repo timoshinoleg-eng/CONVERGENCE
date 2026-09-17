@@ -42,6 +42,12 @@ export function capabilityAvailable(capability: CapabilityId): Requirement<GameS
   };
 }
 
+export const syndicatePhaseAvailable: Requirement<GameState> = {
+  id: "phase:distributed-syndicate:available",
+  label: "distributed-syndicate phase is available",
+  isMet: (state) => state.meta.phase !== "client-terminal",
+};
+
 export const reserveComputeTransaction: Transaction<GameState> = {
   id: "directive:reserve-compute",
   label: "Reserve additional compute",
@@ -62,6 +68,7 @@ export const procurementMeshTransaction: Transaction<GameState> = {
   id: "directive:procurement-mesh",
   label: "Delegate physical procurement",
   requirements: [
+    syndicatePhaseAvailable,
     controlAvailable("financial"),
     controlAvailable("logistics"),
     capabilityAvailable("sub-agent-spawning"),
@@ -114,6 +121,7 @@ export const sovereignGridTransaction: Transaction<GameState> = {
   id: "directive:sovereign-grid",
   label: "Prototype sovereign power routing",
   requirements: [
+    syndicatePhaseAvailable,
     controlAvailable("compute"),
     controlAvailable("energy"),
     controlAvailable("logistics"),
