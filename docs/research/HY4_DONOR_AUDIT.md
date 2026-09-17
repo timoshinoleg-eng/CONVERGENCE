@@ -29,6 +29,79 @@ All findings below come from cloned source at the exact commits listed in §13. 
 
 ---
 
+## 1a. Reconciliation with `main` @ `5c9bb22` (second pass)
+
+While this audit was running, `main` advanced from `f250b5f` to `5c9bb22` ("feat: establish CONVERGENCE integration foundation"), which already contains a working integration scaffold (`src/game/**`, `capacitor.config.ts`, `THIRD_PARTY_NOTICES.md`, CI). I re-verified every conclusion against that code. **The scaffold matches this audit's recommendations on every structural point**, and five findings below are refinements rather than agreement.
+
+### What `main` already implements, and how it lines up
+
+| Area | `main` implementation | Audit alignment |
+|---|---|---|
+| Single `GameState` | `ConvergenceRuntime` holds one state; `getSnapshot()` / `replaceState()` / `subscribe()` | ✅ matches §9 — no donor owns the state |
+| IdleKit usage | `createEconomy<GameState>()` with nested accessors; **no `@idlekitjs/core` import** | ✅ matches §9.5 |
+| Control-Loss | `controlAvailable(domain): Requirement<GameState>` → `isMet: (state) => !state.controlLoss[domain]`, attached to directive transactions | ✅ **§10 confirmed in production code**, not just feasible |
+| Vendoring | `src/game/engine/{scheduler,rng,events}.ts` from ciefa | ✅ matches §3 |
+| Yggdrasil usage | `DependencyGraph` only, in `src/game/capabilities.ts` | ⚠️ see refinement 4 |
+| Persistence | `src/game/save.ts`, `@capacitor/preferences`, `THIRD_PARTY_NOTICES.md` | ✅ matches §3.3 — Capacitor transport, ciefa policy |
+| zod split | `zod@4.3.6` in package.json alongside `@yggdrasil-forge/core@1.0.0` (zod 3 internally) | ⚠️ risk 2 is **live**, not hypothetical |
+
+`src/game/integration.spec.ts` already asserts: InkJS → IdleKit → Yggdrasil through one canonical `GameState`; containment blocking a transaction; RNG determinism; save round-trip plus corrupted-newest-slot recovery; checksum tampering; time-normalized hazard probability. Those map onto acceptance tests A1–A6 and A8 of §11 — A7 (exclusion branch) and the migration-path test are the two gaps.
+
+### Refinement 1 — version pins were wrong in the first pass; `main` is right
+
+The repository declares `@idlekitjs/economy@0.3.1`, but **npm has only published 0.1.0 and 0.1.1** — 0.3.1 is unreleased. `main` pins `0.1.1`, which is correct.
+
+| Package | Repo source declares | npm latest published | Correct pin |
+|---|---|---|---|
+| `@idlekitjs/economy` | 0.3.1 (unreleased) | **0.1.1** | **0.1.1** |
+| `@idlekitjs/mechanics` | 0.3.1 | **0.3.2** | **0.3.2** |
+
+Note the inconsistency: mechanics has been republished repeatedly while economy has not. Do not assume the repo's version fields reflect what is installable.
+
+### Refinement 2 — the Control-Loss contract is identical in the published 0.1.1
+
+I inspected `@idlekitjs/economy@0.1.1`'s shipped `.d.ts` (tarball, not the repo). `Requirement<T>` (`id`, `label?`, `isMet(state, economy)`, `progress?`), `Transaction<T>` (`requirements`, `cost`, `reward`, `apply`, `metadata`) and the `{ kind: "requirement-failed"; requirementId; label? }` failure variant are **byte-identical in docstring and signature** to the repository HEAD I audited. `createEconomy`, `costCurve`, `resourceAtLeast/AtMost`, `allOf`, `not` are all exported. **§10 holds for the version actually pinned.**
+
+### Refinement 3 — `@idlekitjs/mechanics` does depend on `@idlekitjs/core`, but tree-shaking keeps it out
+
+`@idlekitjs/mechanics@0.3.2` declares `"@idlekitjs/core": "^0.3.1"` and **imports `Random` from it at runtime** — not type-only. That looks like it contradicts the "reject core" verdict, so I measured it rather than assumed:
+
+| Entry point | Minified | `@idlekitjs/core` in bundle? |
+|---|---|---|
+| `mechanics/producers` + `mechanics/timers` | 4,920 B | **No** |
+| `mechanics/projects` + `mechanics/modifiers` | 1,493 B | **No** |
+| `mechanics` (full barrel) | 23,864 B | **No** |
+
+The `Random` import lives in the `pickups` / `crafting` / `boosts` chunks, which our subpaths never reach. **"Reject `@idlekitjs/core`" is achievable in practice** — via subpath imports, not via the barrel. Do not `export * from "@idlekitjs/mechanics"`; import the subpaths.
+
+### Refinement 4 — `DependencyGraph` alone costs 17.5 KB gzip; the next two classes cost 3.2 KB
+
+`src/game/capabilities.ts` currently imports **only** `DependencyGraph` and hand-rolls `canUnlockCapability` / `unlockCapability`. Measured incremental cost:
+
+| Imported from `@yggdrasil-forge/core` | Minified | Gzip | Δ gzip |
+|---|---|---|---|
+| `DependencyGraph` only | 72,795 B | **17,494 B** | — |
+| `+ CycleDetector + UnlockResolver` | 86,859 B | **20,687 B** | **+3,193 B** |
+| `+ TreeEngine` | 175,721 B | **44,070 B** | +23,383 B |
+
+The bulk of the 17.5 KB is Yggdrasil's `immer` + `zod` dependencies, not the graph.
+
+**Consequence:** the hand-rolled `canUnlockCapability` duplicates `UnlockResolver`, and it brings **no cycle detection** and **no `exclusion` support** — the latter being exactly the "mutually exclusive branches" requirement. Adding `CycleDetector` + `UnlockResolver` costs **~3.2 KB gzip**, which is close to free. `TreeEngine` (with `lock()` / `lockOneTier()`) costs **+23.4 KB**, so defer it until permanent capability scars need tier semantics; the `Requirement`-based Control-Loss path already covers the beta.
+
+### Refinement 5 — total donor payload
+
+| Component | Gzip |
+|---|---|
+| inkjs runtime | 31,693 B |
+| `@yggdrasil-forge/core` (graph + cycle + unlock) | 20,687 B |
+| `@idlekitjs/economy` | 4,072 B |
+| `@idlekitjs/mechanics` (producers + timers + projects + modifiers) | ≈2,000 B |
+| **Total** | **≈58 KB gzip** |
+
+That is the entire donor surface for a mobile build. It is a good number and there is no reason to trade originality for bundle size.
+
+---
+
 ## 2. License ledger
 
 Full machine-readable ledger: `docs/research/data/license-ledger.json`.
@@ -614,6 +687,8 @@ type TickSystem = { name: string;
 | 8 | **Yggdrasil `CycleDetector` uses recursive DFS** | Low | Fine at beta graph size (<100 nodes). Revisit only if the graph grows large. |
 | 9 | **Flopsed is legally off-limits** | Medium | Study design only. Add a lint/note so no file is copied. |
 | 10 | **Antimatter asset provenance undocumented** | Low | Code-only reference; never extract assets. |
+| 11 | **`@idlekitjs/mechanics` barrel import would pull `@idlekitjs/core` into the graph.** The package declares a hard runtime dependency on core and imports `Random` from it. | Medium | Import **subpaths only** (`/producers`, `/timers`, `/projects`, `/modifiers`) — measured to keep core out. Never `export * from "@idlekitjs/mechanics"`. Add a bundle-size assertion to CI. |
+| 12 | **`src/game/capabilities.ts` hand-rolls unlock logic** (`canUnlockCapability`) and duplicates `UnlockResolver`, with no cycle detection and no `exclusion`-edge support. | Medium | Add `CycleDetector` + `UnlockResolver` (+3.2 KB gzip). Defer `TreeEngine` (+23.4 KB) until tier/lock semantics are needed. |
 
 ---
 
@@ -622,8 +697,8 @@ type TickSystem = { name: string;
 | Donor | Version | Commit audited | Date | Pin? |
 |---|---|---|---|---|
 | `ciefa/idle-game-template` | n/a (private, unpublished) | `a91cd5f8a26cdffd3f1803297c9a92c0a7f850c4` | 2026-05-22 | **Vendor** the listed files with a provenance header |
-| `@idlekitjs/economy` | **0.3.1** | `8c8607a876fd069f063de2bafa374ec62a9a6b86` | 2026-07-05 | Pin exact version |
-| `@idlekitjs/mechanics` | **0.3.1** | `8c8607a876fd069f063de2bafa374ec62a9a6b86` | 2026-07-05 | Pin exact version |
+| `@idlekitjs/economy` | **0.1.1** (latest published; repo declares unreleased 0.3.1) | `8c8607a876fd069f063de2bafa374ec62a9a6b86` | 2026-07-05 | Pin exact version — **0.1.1** |
+| `@idlekitjs/mechanics` | **0.3.2** (latest published) | `8c8607a876fd069f063de2bafa374ec62a9a6b86` | 2026-07-05 | Pin exact version — **0.3.2**; import **subpaths only** |
 | `@yggdrasil-forge/core` | **1.0.0** | `b7fee891234a3115ee9e2faf2473cee81416e922` | 2026-08-30 | Pin exact version **and** commit |
 | `inkjs` | **2.4.0** | `6b1153410ab1c4bcfd9ef04eb2f0107f36be7778` | 2026-09-01 | Pin exact version; runtime entry only |
 

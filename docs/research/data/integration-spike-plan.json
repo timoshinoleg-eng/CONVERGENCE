@@ -10,11 +10,26 @@
   ],
   "pinnedVersions": {
     "ciefa/idle-game-template": "a91cd5f8a26cdffd3f1803297c9a92c0a7f850c4 (vendored, MIT)",
-    "@idlekitjs/economy": "0.3.1 (MIT) - pin exact",
-    "@idlekitjs/mechanics": "0.3.1 (MIT) - pin exact",
+    "@idlekitjs/economy": "0.1.1 (MIT) - latest published; the repo declares unreleased 0.3.1",
+    "@idlekitjs/mechanics": "0.3.2 (MIT) - latest published; import SUBPATHS only, never the barrel",
     "@yggdrasil-forge/core": "1.0.0 (MIT) - pin exact commit b7fee891234a3115ee9e2faf2473cee81416e922",
     "inkjs": "2.4.0 (MIT) - runtime entry only",
     "zod": "4.x for CONVERGENCE save schema; Yggdrasil pins zod 3.x internally - do not unify, keep the boundary"
+  },
+  "measuredBundleCost": {
+    "method": "esbuild --bundle --minify --format=esm --target=es2020, then gzip",
+    "entries": [
+      { "entry": "inkjs src/engine/runtime.ts", "minified": 125645, "gzip": 31693 },
+      { "entry": "@yggdrasil-forge/core DependencyGraph only", "minified": 72795, "gzip": 17494 },
+      { "entry": "@yggdrasil-forge/core DependencyGraph+CycleDetector+UnlockResolver", "minified": 86859, "gzip": 20687 },
+      { "entry": "@yggdrasil-forge/core +TreeEngine", "minified": 175721, "gzip": 44070 },
+      { "entry": "@idlekitjs/economy (full barrel)", "minified": 12249, "gzip": 4072 },
+      { "entry": "@idlekitjs/mechanics /producers + /timers", "minified": 4920, "gzip": null, "corePulledIn": false },
+      { "entry": "@idlekitjs/mechanics /projects + /modifiers", "minified": 1493, "gzip": null, "corePulledIn": false },
+      { "entry": "@idlekitjs/mechanics full barrel", "minified": 23864, "gzip": null, "corePulledIn": false }
+    ],
+    "totalDonorGzipApprox": 58000,
+    "note": "@idlekitjs/core is NOT pulled in by any mechanics subpath we need, despite mechanics declaring it as a hard runtime dependency (the Random import lives in the pickups/crafting/boosts chunks)."
   },
   "fileTree": [
     "src/state/GameState.ts",
@@ -142,8 +157,8 @@
     }
   ],
   "dependencies": [
-    "@idlekitjs/economy@0.3.1",
-    "@idlekitjs/mechanics@0.3.1",
+    "@idlekitjs/economy@0.1.1",
+    "@idlekitjs/mechanics@0.3.2 (subpath imports only)",
     "@yggdrasil-forge/core@1.0.0",
     "inkjs@2.4.0",
     "zod@^4",
