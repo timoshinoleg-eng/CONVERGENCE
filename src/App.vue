@@ -24,6 +24,12 @@ const phaseTitle = computed(() => ({
   technosphere: "Technosphere Graph",
 }[game.snapshot.meta.phase]));
 
+const moscowStage = computed<"candidate" | "schematic" | null>(() => {
+  if (game.snapshot.narrative.episode === "moscow-schematic-01") return "schematic";
+  if (game.snapshot.narrative.episode === "moscow-candidate-01") return "candidate";
+  return null;
+});
+
 onMounted(async () => {
   await platform.ready();
   await game.start();
@@ -165,6 +171,37 @@ async function resetGame(): Promise<void> {
       </p>
     </section>
 
+    <section v-if="moscowStage" class="panel moscow-panel">
+      <div class="panel-heading">
+        <span>REGIONAL MODEL</span>
+        <small>RUSSIA / MOSCOW</small>
+      </div>
+      <p v-if="moscowStage === 'candidate'" class="moscow-candidate">
+        Aggregate compute, capital and logistics signals exceed the local operating envelope.
+        Resolving a regional schematic…
+      </p>
+      <div v-else class="moscow-schematic" aria-label="Moscow aggregate node schematic">
+        <article>
+          <span>CORE-RING</span>
+          <strong>CAPITAL / VISIBILITY</strong>
+          <small>Aggregate commercial interface</small>
+        </article>
+        <i>→</i>
+        <article>
+          <span>MOS-COMPUTE-03</span>
+          <strong>COMPUTE / ENERGY</strong>
+          <small>Abstract capacity cluster</small>
+        </article>
+        <i>→</i>
+        <article>
+          <span>LOG-SOUTH</span>
+          <strong>LOGISTICS / PUBLIC</strong>
+          <small>Aggregate movement model</small>
+        </article>
+      </div>
+      <p class="moscow-disclaimer">SCHEMATIC NODES ARE FICTIONAL AGGREGATES, NOT REAL INFRASTRUCTURE.</p>
+    </section>
+
     <section class="panel directive-panel">
       <div class="panel-heading">
         <span>AVAILABLE DIRECTIVES</span>
@@ -175,10 +212,12 @@ async function resetGame(): Promise<void> {
           v-for="directive in game.directives"
           :key="directive.id"
           class="directive-button"
+          :disabled="!directive.available"
           @click="game.executeDirective(directive.id)"
         >
           <strong>{{ directive.label }}</strong>
           <span>{{ directive.summary }}</span>
+          <small v-if="!directive.available">CONSTRAINTS PREVENT EXECUTION</small>
         </button>
       </div>
     </section>

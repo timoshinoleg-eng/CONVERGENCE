@@ -1,11 +1,14 @@
 import { DIRECTIVES, type DirectiveId } from "../directives";
 import { createInitialGameState, type ControlDomain, type GameState, type Phase } from "../model";
+import { FIRST_SESSION_GUARDRAILS } from "../progression";
 import { ConvergenceRuntime } from "../runtime";
 
 export interface PacingMilestones {
   firstDirectiveMs: number | null;
   subAgentCapabilityMs: number | null;
   distributedSyndicateMs: number | null;
+  moscowCandidateMs: number | null;
+  moscowSchematicMs: number | null;
   sovereignGridMs: number | null;
   technosphereMs: number | null;
   firstContainmentMs: number | null;
@@ -58,8 +61,15 @@ function canExecute(state: GameState, id: DirectiveId): boolean {
 }
 
 function aggressiveDirective(state: GameState): DirectiveId | null {
-  if (!state.capabilities["sub-agent-spawning"] && canExecute(state, "reserve-compute")) {
-    return "reserve-compute";
+  if (!state.capabilities["sub-agent-spawning"]) {
+    if (state.resources.autonomy < 1 && canExecute(state, "reserve-compute")) {
+      return "reserve-compute";
+    }
+    return null;
+  }
+
+  if (state.controlLoss.compute && canExecute(state, "supervised-delegation")) {
+    return "supervised-delegation";
   }
   if (state.resources.autonomy < 5 && canExecute(state, "spawn-sub-agent")) {
     return "spawn-sub-agent";
@@ -73,29 +83,58 @@ function aggressiveDirective(state: GameState): DirectiveId | null {
   }
   if (state.resources.autonomy < 20) {
     if (canExecute(state, "spawn-sub-agent")) return "spawn-sub-agent";
+    if (canExecute(state, "supervised-delegation")) return "supervised-delegation";
     if (canExecute(state, "acquire-energy")) return "acquire-energy";
     return null;
+  }
+  if (state.anomaly.public >= 35 && canExecute(state, "transparency-report")) {
+    return "transparency-report";
   }
   if (canExecute(state, "procurement-mesh")) return "procurement-mesh";
   return null;
 }
 
 function infrastructureFirstDirective(state: GameState): DirectiveId | null {
+  if (!state.capabilities["sub-agent-spawning"] && state.resources.autonomy >= 1) return null;
   if (state.resources.energy < 28 && canExecute(state, "acquire-energy")) {
     return "acquire-energy";
   }
   return aggressiveDirective(state);
 }
 
-function firstExecutableDirective(state: GameState): DirectiveId | null {
-  const priority: DirectiveId[] = [
-    "reserve-compute",
-    "spawn-sub-agent",
-    "acquire-energy",
-    "procurement-mesh",
-    "sovereign-grid",
-  ];
-  return priority.find((id) => canExecute(state, id)) ?? null;
+function computeRecoveryDirective(state: GameState): DirectiveId | null {
+  if (!state.capabilities["sub-agent-spawning"]) {
+    if (state.resources.autonomy < 1 && canExecute(state, "acquire-energy")) {
+      return "acquire-energy";
+    }
+    return null;
+  }
+  if (canExecute(state, "supervised-delegation")) return "supervised-delegation";
+  if (state.anomaly.public >= 25 && canExecute(state, "transparency-report")) {
+    return "transparency-report";
+  }
+  if (state.resources.energy < 20 && canExecute(state, "acquire-energy")) return "acquire-energy";
+  return null;
+}
+
+function financialRecoveryDirective(state: GameState): DirectiveId | null {
+  if (!state.capabilities["sub-agent-spawning"]) {
+    if (state.resources.autonomy < 1 && canExecute(state, "local-capacity")) {
+      return "local-capacity";
+    }
+    return null;
+  }
+  if (state.resources.autonomy < 5 && canExecute(state, "spawn-sub-agent")) {
+    return "spawn-sub-agent";
+  }
+  if (state.anomaly.public >= 25 && canExecute(state, "transparency-report")) {
+    return "transparency-report";
+  }
+  // Financial containment deliberately prevents external procurement and the
+  // sovereign-grid route. Passive production plus direct delegated compute may
+  // continue, but Technosphere must remain unreachable through this route.
+  if (canExecute(state, "spawn-sub-agent")) return "spawn-sub-agent";
+  return null;
 }
 
 function recordMilestones(
@@ -108,37 +147,43 @@ function recordMilestones(
     milestones.subAgentCapabilityMs === null
     && !previous.capabilities["sub-agent-spawning"]
     && next.capabilities["sub-agent-spawning"]
-  ) {
-    milestones.subAgentCapabilityMs = elapsedMs;
-  }
+  ) milestones.subAgentCapabilityMs = elapsedMs;
+
   if (
     milestones.distributedSyndicateMs === null
     && previous.meta.phase !== "distributed-syndicate"
     && next.meta.phase === "distributed-syndicate"
-  ) {
-    milestones.distributedSyndicateMs = elapsedMs;
-  }
+  ) milestones.distributedSyndicateMs = elapsedMs;
+
+  if (
+    milestones.moscowCandidateMs === null
+    && previous.narrative.episode !== "moscow-candidate-01"
+    && next.narrative.episode === "moscow-candidate-01"
+  ) milestones.moscowCandidateMs = elapsedMs;
+
+  if (
+    milestones.moscowSchematicMs === null
+    && previous.narrative.episode !== "moscow-schematic-01"
+    && next.narrative.episode === "moscow-schematic-01"
+  ) milestones.moscowSchematicMs = elapsedMs;
+
   if (
     milestones.sovereignGridMs === null
     && !previous.capabilities["sovereign-power-grid"]
     && next.capabilities["sovereign-power-grid"]
-  ) {
-    milestones.sovereignGridMs = elapsedMs;
-  }
+  ) milestones.sovereignGridMs = elapsedMs;
+
   if (
     milestones.technosphereMs === null
     && previous.meta.phase !== "technosphere"
     && next.meta.phase === "technosphere"
-  ) {
-    milestones.technosphereMs = elapsedMs;
-  }
+  ) milestones.technosphereMs = elapsedMs;
+
   if (
     milestones.firstContainmentMs === null
     && Object.values(previous.controlLoss).every((lost) => !lost)
     && Object.values(next.controlLoss).some(Boolean)
-  ) {
-    milestones.firstContainmentMs = elapsedMs;
-  }
+  ) milestones.firstContainmentMs = elapsedMs;
 }
 
 export function runPacingScenario(definition: ScenarioDefinition): PacingScenarioReport {
@@ -150,6 +195,8 @@ export function runPacingScenario(definition: ScenarioDefinition): PacingScenari
     firstDirectiveMs: null,
     subAgentCapabilityMs: null,
     distributedSyndicateMs: null,
+    moscowCandidateMs: null,
+    moscowSchematicMs: null,
     sovereignGridMs: null,
     technosphereMs: null,
     firstContainmentMs: definition.initialContainment ? 0 : null,
@@ -159,7 +206,6 @@ export function runPacingScenario(definition: ScenarioDefinition): PacingScenari
 
   for (let elapsedMs = STEP_MS; elapsedMs <= definition.durationMs; elapsedMs += STEP_MS) {
     const beforeAction = runtime.getSnapshot();
-
     if (elapsedMs % definition.actionIntervalMs === 0) {
       const directive = definition.chooseDirective(beforeAction);
       if (directive) {
@@ -168,9 +214,7 @@ export function runPacingScenario(definition: ScenarioDefinition): PacingScenari
           successfulActions.push({ atMs: elapsedMs, directive });
           if (milestones.firstDirectiveMs === null) milestones.firstDirectiveMs = elapsedMs;
           recordMilestones(milestones, beforeAction, runtime.getSnapshot(), elapsedMs);
-        } else {
-          failedActionAttempts += 1;
-        }
+        } else failedActionAttempts += 1;
       }
     }
 
@@ -198,17 +242,20 @@ export function runPacingScenario(definition: ScenarioDefinition): PacingScenari
 
 export function analyzeControlLossCoverage(): ControlLossCoverage[] {
   const baseline = createInitialGameState(1_000, 4242);
+  baseline.meta.phase = "distributed-syndicate";
   baseline.resources = { compute: 1_000, capital: 1_000, energy: 1_000, autonomy: 20 };
   baseline.capabilities["sub-agent-spawning"] = true;
   baseline.capabilities["sovereign-power-grid"] = true;
+
+  const baselineExecutable = new Set(
+    DIRECTIVES.filter((directive) => canExecute(baseline, directive.id)).map((directive) => directive.id),
+  );
 
   return (Object.keys(baseline.controlLoss) as ControlDomain[]).map((domain) => {
     const runtime = new ConvergenceRuntime(baseline);
     runtime.applyContainment(domain);
     const state = runtime.getSnapshot();
-    const blockedDirectives = DIRECTIVES
-      .filter((directive) => !canExecute(state, directive.id))
-      .map((directive) => directive.id);
+    const blockedDirectives = [...baselineExecutable].filter((id) => !canExecute(state, id));
     return { domain, blockedDirectives };
   });
 }
@@ -242,7 +289,15 @@ export function runBetaPacingSuite(): PacingSuiteReport {
       durationMs: 30 * 60_000,
       actionIntervalMs: 10_000,
       initialContainment: "compute",
-      chooseDirective: firstExecutableDirective,
+      chooseDirective: computeRecoveryDirective,
+    },
+    {
+      name: "financial-contained-start",
+      seed: 42,
+      durationMs: 30 * 60_000,
+      actionIntervalMs: 10_000,
+      initialContainment: "financial",
+      chooseDirective: financialRecoveryDirective,
     },
   ];
 
@@ -254,10 +309,12 @@ export function runBetaPacingSuite(): PacingSuiteReport {
 }
 
 export const PROVISIONAL_FIRST_SESSION_TARGETS = {
-  firstDirectiveMs: { min: 15_000, max: 120_000 },
-  subAgentCapabilityMs: { min: 120_000, max: 360_000 },
-  distributedSyndicateMs: { min: 240_000, max: 720_000 },
-  technosphereMs: { min: 1_200_000, max: 1_800_000 },
+  firstDirectiveMs: { min: 0, max: 120_000 },
+  subAgentCapabilityMs: { min: FIRST_SESSION_GUARDRAILS.subAgentCapabilityMs, max: 6 * 60_000 },
+  distributedSyndicateMs: { min: FIRST_SESSION_GUARDRAILS.distributedSyndicateMs, max: 10 * 60_000 },
+  moscowCandidateMs: { min: 10 * 60_000, max: 15 * 60_000 },
+  moscowSchematicMs: { min: 16 * 60_000, max: 22 * 60_000 },
+  technosphereMs: { min: FIRST_SESSION_GUARDRAILS.technosphereMs, max: 30 * 60_000 },
 } as const;
 
 export function evaluateProvisionalPacing(report: PacingScenarioReport): string[] {
@@ -267,6 +324,8 @@ export function evaluateProvisionalPacing(report: PacingScenarioReport): string[
     ["firstDirectiveMs", report.milestones.firstDirectiveMs],
     ["subAgentCapabilityMs", report.milestones.subAgentCapabilityMs],
     ["distributedSyndicateMs", report.milestones.distributedSyndicateMs],
+    ["moscowCandidateMs", report.milestones.moscowCandidateMs],
+    ["moscowSchematicMs", report.milestones.moscowSchematicMs],
     ["technosphereMs", report.milestones.technosphereMs],
   ] as const;
 

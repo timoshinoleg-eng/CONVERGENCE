@@ -1,6 +1,7 @@
 import { createTickRng } from "./engine/rng";
 import { applyIncident, reducePressure, type IncidentOutcome } from "./incidents";
 import type { AnomalyChannel, GameState } from "./model";
+import { advanceProgression, type ProgressionUpdate } from "./progression";
 
 export const ANOMALY_CHANNELS: readonly AnomalyChannel[] = [
   "financial",
@@ -13,6 +14,7 @@ export const ANOMALY_CHANNELS: readonly AnomalyChannel[] = [
 export interface SimulationReport {
   elapsedSeconds: number;
   incidents: IncidentOutcome[];
+  progression: ProgressionUpdate;
 }
 
 export function hazardLambda(anomaly: number): number {
@@ -54,12 +56,6 @@ export function advanceSimulation(
     }
   }
 
-  if (state.capabilities["sub-agent-spawning"] && state.resources.autonomy >= 4) {
-    state.meta.phase = "distributed-syndicate";
-  }
-  if (state.capabilities["sovereign-power-grid"] && state.resources.autonomy >= 20) {
-    state.meta.phase = "technosphere";
-  }
-
-  return { elapsedSeconds: deltaSeconds, incidents };
+  const progression = advanceProgression(state, input.currentTime);
+  return { elapsedSeconds: deltaSeconds, incidents, progression };
 }

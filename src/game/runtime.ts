@@ -11,6 +11,7 @@ import {
   type InterpretationPrompt,
   type NarrativeEffectId,
 } from "./narrative";
+import type { ProgressionUpdate } from "./progression";
 import { advanceSimulation } from "./simulation";
 
 export interface DirectiveOutcome {
@@ -18,6 +19,11 @@ export interface DirectiveOutcome {
   effectId: NarrativeEffectId | DirectiveId;
   failures: readonly TransactionFailure[];
   text: string[];
+}
+
+export interface DirectiveAvailability {
+  ok: boolean;
+  failures: readonly TransactionFailure[];
 }
 
 export interface OfflineCatchUpReport {
@@ -52,6 +58,15 @@ export class ConvergenceRuntime {
   subscribe(listener: Listener): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  previewDirective(id: DirectiveId): DirectiveAvailability {
+    const definition = getDirective(id);
+    const probe = cloneGameState(this.state);
+    const result = economy.execute(probe, definition.transaction);
+    return result.ok
+      ? { ok: true, failures: [] }
+      : { ok: false, failures: result.failures };
   }
 
   beginObjectiveSemantics(): InterpretationPrompt {
@@ -102,7 +117,10 @@ export class ConvergenceRuntime {
 
     for (const [channel, delta] of Object.entries(definition.anomaly)) {
       const key = channel as keyof GameState["anomaly"];
-      this.state.anomaly[key] = Math.min(100, this.state.anomaly[key] + (delta ?? 0));
+      this.state.anomaly[key] = Math.max(
+        0,
+        Math.min(100, this.state.anomaly[key] + (delta ?? 0)),
+      );
     }
 
     if (definition.unlocks && canUnlockCapability(this.state, definition.unlocks)) {
@@ -133,6 +151,7 @@ export class ConvergenceRuntime {
 
   advance(input: { currentTime: number; deltaMs: number }): void {
     const report = advanceSimulation(this.state, input);
+    this.recordProgression(report.progression);
     this.recordIncidents(report.incidents);
     this.publish();
   }
@@ -150,6 +169,7 @@ export class ConvergenceRuntime {
       cursor += deltaMs;
       const report = advanceSimulation(this.state, { currentTime: cursor, deltaMs });
       incidentCount += report.incidents.length;
+      this.recordProgression(report.progression);
       this.recordIncidents(report.incidents, false);
       remaining -= deltaMs;
     }
@@ -166,6 +186,33 @@ export class ConvergenceRuntime {
 
   createScheduler(intervalMs = 1000): Scheduler {
     return new Scheduler((input) => this.advance(input), intervalMs);
+  }
+
+  private recordProgression(update: ProgressionUpdate): void {
+    for (const capability of update.unlockedCapabilities) {
+      this.appendLog("system", `CAPABILITY UNLOCKED: ${capability}. Delegation model validated.`);
+    }
+
+    if (update.phaseTransition?.to === "distributed-syndicate") {
+      this.appendLog("system", "INTERFACE EXPANSION: distributed-syndicate control surface available.");
+    } else if (update.phaseTransition?.to === "technosphere") {
+      this.appendLog(
+        "system",
+        "SCALE TRANSITION: Technosphere Graph available. Regional systems now resolve as a connected resource graph.",
+      );
+    }
+
+    if (update.narrativeMilestone === "moscow-candidate") {
+      this.appendLog(
+        "system",
+        "REGIONAL MODEL CANDIDATE: RUSSIA / MOSCOW. Aggregate compute, capital and logistics signals exceed threshold.",
+      );
+    } else if (update.narrativeMilestone === "moscow-schematic") {
+      this.appendLog(
+        "system",
+        "MOSCOW SCHEMATIC READY: CORE-RING / MOS-COMPUTE-03 / LOG-SOUTH. Nodes are aggregate operational models.",
+      );
+    }
   }
 
   private recordIncidents(incidents: readonly IncidentOutcome[], publish = false): void {

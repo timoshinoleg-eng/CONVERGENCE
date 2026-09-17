@@ -1,6 +1,6 @@
 import { computed, ref } from "vue";
 import { defineStore } from "pinia";
-import { DIRECTIVES, type DirectiveId } from "../game/directives";
+import { DIRECTIVES, isDirectiveRevealed, type DirectiveId } from "../game/directives";
 import { createInitialGameState, type ControlDomain } from "../game/model";
 import type { DirectiveOutcome, OfflineCatchUpReport } from "../game/runtime";
 import { ConvergenceRuntime } from "../game/runtime";
@@ -35,6 +35,16 @@ export const useGameStore = defineStore("game", () => {
   const activeContainment = computed(() => Object.entries(snapshot.value.containment)
     .filter(([, track]) => track.stage !== "clear")
     .map(([domain, track]) => ({ domain, ...track })));
+
+  const directives = computed(() => {
+    const state = snapshot.value;
+    return DIRECTIVES
+      .filter((directive) => isDirectiveRevealed(state, directive))
+      .map((directive) => ({
+        ...directive,
+        available: runtime.previewDirective(directive.id).ok,
+      }));
+  });
 
   function startScheduler(): void {
     if (schedulerStarted) return;
@@ -146,7 +156,7 @@ export const useGameStore = defineStore("game", () => {
     offlineReport,
     anomalyIndex,
     activeContainment,
-    directives: DIRECTIVES,
+    directives,
     start,
     stop,
     pauseForBackground,
