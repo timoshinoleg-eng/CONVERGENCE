@@ -1,24 +1,17 @@
 /**
  * Storage resolution for the platform boundary.
  *
- * The core save system (`src/game/save.ts`) only knows the `KeyValueStore`
- * contract. Which concrete store backs it is a platform decision, made here.
+ * The game core knows only `KeyValueStore`. Platform-specific persistence is
+ * selected here and can degrade without changing the save format.
  *
- * Decision for the Telegram beta: keep ONE store implementation family
- * (Capacitor Preferences) for all three runtimes.
+ * Telegram beta order:
+ *   Bot API 9.0+ DeviceStorage -> Capacitor Preferences web fallback -> memory.
  *
- *   - Capacitor/Android -> native Preferences (SharedPreferences), unchanged.
- *   - browser           -> Capacitor Preferences web fallback = localStorage.
- *   - Telegram WebView  -> same web fallback, therefore the same localStorage.
+ * Browser:
+ *   Capacitor Preferences web fallback -> memory.
  *
- * Keeping browser and Telegram on the identical key space is deliberate: it
- * avoids three divergent save paths and it means this PR cannot regress any
- * existing web/APK save. A cloud save is NOT implemented; the `KeyValueStore`
- * seam is the place where it would later be added.
- *
- * If the host storage throws (private mode, blocked WebView storage, quota),
- * the adapter degrades to an in-memory store instead of crashing, and reports
- * `durable: false` so the UI can warn the player.
+ * Capacitor Android:
+ *   native Preferences -> memory.
  */
 
 import { Preferences } from "@capacitor/preferences";
@@ -47,40 +40,117 @@ export class MemoryStore implements KeyValueStore {
   }
 }
 
+/** Structural subset of Telegram Bot API 9.0+ WebApp.DeviceStorage. */
+export interface TelegramDeviceStoragePort {
+  getItem(
+    key: string,
+    callback: (error: string | null, value?: string | null) => void,
+  ): unknown;
+  setItem(
+    key: string,
+    value: string,
+    callback?: (error: string | null, stored?: boolean) => void,
+  ): unknown;
+}
+
+export class TelegramDeviceStore implements KeyValueStore {
+  constructor(private readonly deviceStorage: TelegramDeviceStoragePort) {}
+
+  get(key: string): Promise<string | null> {
+    return new Promise((resolve, reject) => {
+      try {
+        this.deviceStorage.getItem(key, (error, value) => {
+          if (error) reject(new Error(error));
+          else resolve(typeof value === "string" ? value : null);
+        });
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  set(key: string, value: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      try {
+        this.deviceStorage.setItem(key, value, (error, stored) => {
+          if (error || stored === false) reject(new Error(error || "Telegram DeviceStorage write failed"));
+          else resolve();
+        });
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+}
+
 export interface PlatformStorageOptions {
   /** True when running inside a real Capacitor native WebView. */
   native: boolean;
+  /** Telegram Bot API 9.0+ DeviceStorage when available. */
+  telegramDeviceStorage?: TelegramDeviceStoragePort | null;
+  /** Test seam. */
+  preferences?: KeyValueStore;
+}
+
+interface StorageLayer {
+  kind: StorageKind;
+  store: KeyValueStore;
 }
 
 export function createPlatformStorage(options: PlatformStorageOptions): PlatformStorage {
-  const baseKind: StorageKind = options.native ? "capacitor-native" : "web-localstorage";
-  const primary: KeyValueStore = new PreferencesStore();
-  let fallback: MemoryStore | null = null;
+  const layers: StorageLayer[] = [];
 
-  const active = (): KeyValueStore => fallback ?? primary;
+  if (options.telegramDeviceStorage) {
+    layers.push({
+      kind: "telegram-device",
+      store: new TelegramDeviceStore(options.telegramDeviceStorage),
+    });
+  }
+
+  layers.push({
+    kind: options.native ? "capacitor-native" : "web-localstorage",
+    store: options.preferences ?? new PreferencesStore(),
+  });
+  layers.push({ kind: "memory", store: new MemoryStore() });
+
+  let activeIndex = 0;
+  const active = (): StorageLayer => layers[activeIndex];
+  const degrade = (): boolean => {
+    if (activeIndex >= layers.length - 1) return false;
+    activeIndex += 1;
+    return true;
+  };
 
   return {
     get kind(): StorageKind {
-      return fallback ? "memory" : baseKind;
+      return active().kind;
     },
     get durable(): boolean {
-      return fallback === null;
+      return active().kind !== "memory";
     },
     async get(key: string): Promise<string | null> {
-      try {
-        return await active().get(key);
-      } catch {
-        fallback = fallback ?? new MemoryStore();
-        return null;
+      while (true) {
+        try {
+          return await active().store.get(key);
+        } catch {
+          if (!degrade()) return null;
+        }
       }
     },
     async set(key: string, value: string): Promise<void> {
-      try {
-        await active().set(key, value);
-      } catch {
-        // Losing a write is preferable to losing the session; `durable`
-        // becomes false so the player is told the save will not survive.
-        fallback = fallback ?? new MemoryStore();
+      while (true) {
+        try {
+          await active().store.set(key, value);
+          return;
+        } catch {
+          // Retry the SAME write in the next layer. This is essential because
+          // saveSnapshot immediately verifies the value it just persisted.
+          if (!degrade()) {
+            // MemoryStore is the final layer and should not throw, but keep the
+            // contract explicit if a custom test store violates that premise.
+            throw new Error("No writable persistence layer available");
+          }
+        }
       }
     },
   };
