@@ -85,6 +85,60 @@ Check on a phone-sized viewport:
 - reset requires confirmation;
 - app remains usable after multiple background/resume cycles.
 
+## Telegram Mini App smoke test
+
+Run this in addition to the Android APK gate whenever a build is going to be used as a Telegram Mini
+App. The web bundle (`dist/`) must be served over HTTPS and registered in BotFather first.
+
+Environment matrix to cover at least once before closed beta:
+
+- Telegram Android;
+- Telegram iOS;
+- Telegram Desktop.
+
+### 1. Launch and bootstrap
+
+- Open the Mini App from the bot.
+- Confirm the Telegram loading placeholder disappears (this proves `WebApp.ready()` ran).
+- Confirm the Mini App expands to the full sheet height rather than the short default viewport.
+- Confirm `document.documentElement.dataset.cvPlatform === "telegram"` in a remote debugger, and that
+  the persistence panel shows `TELEGRAM`.
+
+### 2. Layout
+
+- No horizontal page overflow.
+- Nothing is hidden behind the Telegram header or the bottom safe area.
+- Directive buttons, anomaly rows and containment cards stay tappable and readable.
+- Rotate is not required; portrait only is acceptable.
+
+### 3. Lifecycle and offline catch-up
+
+- Play until at least two directives are executed.
+- Minimise the Mini App inside Telegram, open a chat, wait ~20 minutes, return.
+- Confirm the offline catch-up banner appears **exactly once** with a plausible minute count.
+- Confirm resources advanced once, not twice (no duplicated progression).
+- Confirm the scheduler resumed (tick counter keeps advancing).
+- Repeat a short minimise/return cycle and confirm no duplicated catch-up.
+
+### 4. Persistence
+
+- Confirm the build ID and save schema are visible.
+- Confirm no "SAVE NOT PERSISTENT" warning. If the warning appears, record the client and OS version:
+  it means WebView storage writes are failing and the save lives in memory only.
+- Clear Telegram cache and relaunch: the game must start fresh and must not crash or show a corrupt
+  save. (Progress loss in this case is expected and accepted for closed beta.)
+
+### 5. Back button
+
+- With no overlay open, Telegram back/close must behave exactly as before this change.
+- Closing the Mini App and reopening it must restore the latest saved state.
+
+### 6. Launch parameter
+
+- Open the Mini App with `startapp=region:moscow` (or the equivalent direct link).
+- The game must boot normally; an unrecognised parameter must also boot normally.
+- No launch parameter may grant resources, unlocks or anything with economic value.
+
 ## First-session tester protocol
 
 For the first cohort, ask testers to play without instructions beyond installation. Do not explain the intended strategy or optimal path.

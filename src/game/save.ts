@@ -1,4 +1,3 @@
-import { Preferences } from "@capacitor/preferences";
 import { z } from "zod";
 import type { GameState } from "./model";
 
@@ -131,31 +130,10 @@ export interface SaveEnvelope {
   data: GameState;
 }
 
+/** The ONLY storage contract the game core knows about. */
 export interface KeyValueStore {
   get(key: string): Promise<string | null>;
   set(key: string, value: string): Promise<void>;
-}
-
-export class PreferencesStore implements KeyValueStore {
-  async get(key: string): Promise<string | null> {
-    return (await Preferences.get({ key })).value;
-  }
-
-  async set(key: string, value: string): Promise<void> {
-    await Preferences.set({ key, value });
-  }
-}
-
-export class MemoryStore implements KeyValueStore {
-  private readonly values = new Map<string, string>();
-
-  async get(key: string): Promise<string | null> {
-    return this.values.get(key) ?? null;
-  }
-
-  async set(key: string, value: string): Promise<void> {
-    this.values.set(key, value);
-  }
 }
 
 function migrateEnvelope(raw: Record<string, unknown>): Record<string, unknown> {
