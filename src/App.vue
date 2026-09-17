@@ -1,14 +1,20 @@
 <script setup lang="ts">
-import { App as CapacitorApp } from "@capacitor/app";
-import type { PluginListenerHandle } from "@capacitor/core";
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useGameStore } from "./stores/game";
+import { getPlatform, type LifecyclePhase } from "./platform";
 
 const game = useGameStore();
+const platform = getPlatform();
 const saveStatus = ref("");
+const storageWarning = ref(false);
 const isDev = import.meta.env.DEV;
 const buildId = (import.meta.env.VITE_BUILD_ID || "dev").slice(0, 12);
-let appStateHandle: PluginListenerHandle | null = null;
+const platformLabel = `${platform.kind.toUpperCase()} · ${platform.storage.kind}`;
+let lifecycleHandle: (() => void) | null = null;
+
+function refreshStorageWarning(): void {
+  storageWarning.value = !platform.storage.durable;
+}
 
 const phaseTitle = computed(() => ({
   "client-terminal": "Client Terminal",
@@ -17,20 +23,33 @@ const phaseTitle = computed(() => ({
 }[game.snapshot.meta.phase]));
 
 onMounted(async () => {
+  // One conceptual lifecycle for Telegram / browser / Capacitor. The adapter
+  // de-duplicates host events, so a single background->return cycle produces
+  // exactly one pause/save and exactly one offline catch-up.
+  await platform.ready();
   await game.start();
-  appStateHandle = await CapacitorApp.addListener("appStateChange", ({ isActive }) => {
-    if (isActive) game.resumeFromBackground();
-    else void game.pauseForBackground();
+  refreshStorageWarning();
+  lifecycleHandle = platform.onLifecycle((phase: LifecyclePhase) => {
+    if (phase === "background") {
+      void game.pauseForBackground().then(refreshStorageWarning);
+    } else if (phase === "active") {
+      game.resumeFromBackground();
+    } else {
+      game.stop();
+    }
   });
 });
 
 onUnmounted(() => {
-  if (appStateHandle) void appStateHandle.remove();
+  if (lifecycleHandle) lifecycleHandle();
+  lifecycleHandle = null;
   game.stop();
+  platform.dispose();
 });
 
 async function saveGame(): Promise<void> {
   const generation = await game.save();
+  refreshStorageWarning();
   saveStatus.value = `SAVE GENERATION ${generation} VERIFIED`;
 }
 
@@ -178,7 +197,12 @@ async function resetGame(): Promise<void> {
         <button @click="loadGame">Restore latest valid</button>
         <button class="danger" @click="resetGame">Reset beta save</button>
       </div>
-      <small>{{ saveStatus || `BUILD ${buildId} · SAVE SCHEMA v${game.snapshot.schemaVersion}` }}</small>
+      <div class="persistence-meta">
+        <small>{{ saveStatus || `BUILD ${buildId} · SAVE SCHEMA v${game.snapshot.schemaVersion} · ${platformLabel}` }}</small>
+        <small v-if="storageWarning" class="storage-warning">
+          SAVE NOT PERSISTENT — host storage unavailable, progress is lost on close.
+        </small>
+      </div>
     </section>
 
     <section v-if="isDev" class="dev-panel">

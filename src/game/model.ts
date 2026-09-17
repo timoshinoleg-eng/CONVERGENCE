@@ -1,3 +1,5 @@
+import type { WorldState } from "./world";
+
 export type Phase = "client-terminal" | "distributed-syndicate" | "technosphere";
 
 export type ControlDomain = "financial" | "compute" | "energy" | "logistics" | "public";
@@ -55,6 +57,13 @@ export interface GameState {
   };
   scars: string[];
   log: GameLogEntry[];
+  /**
+   * Optional additive geography slot (World -> Countries -> Regions -> Nodes).
+   * Intentionally left `undefined` until region content is specified, so every
+   * existing save serializes byte-identically and no migration is needed.
+   * See `src/game/world.ts`.
+   */
+  world?: WorldState;
 }
 
 function freshContainmentTrack(): ContainmentTrack {

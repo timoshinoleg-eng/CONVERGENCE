@@ -5,11 +5,14 @@ import { createInitialGameState, type ControlDomain } from "../game/model";
 import type { DirectiveOutcome, OfflineCatchUpReport } from "../game/runtime";
 import { ConvergenceRuntime } from "../game/runtime";
 import type { InterpretationPrompt } from "../game/narrative";
-import { loadSnapshot, PreferencesStore, saveSnapshot } from "../game/save";
+import { loadSnapshot, saveSnapshot } from "../game/save";
+import { getPlatform } from "../platform";
 
 export const useGameStore = defineStore("game", () => {
   const runtime = new ConvergenceRuntime();
-  const persistence = new PreferencesStore();
+  // Storage backend is a platform decision, resolved once at the boundary.
+  // The store still only sees the core `KeyValueStore` contract.
+  const persistence = getPlatform().storage;
   const snapshot = ref(runtime.getSnapshot());
   const prompt = ref<InterpretationPrompt | null>(null);
   const lastOutcome = ref<DirectiveOutcome | null>(null);

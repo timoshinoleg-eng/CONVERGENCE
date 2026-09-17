@@ -1,6 +1,6 @@
-import { Preferences } from "@capacitor/preferences";
 import { z } from "zod";
 import type { GameState } from "./model";
+import { isValidWorldShape, type WorldState } from "./world";
 
 const CURRENT_SAVE_VERSION = 2;
 const SLOT_A = "convergence.save.a";
@@ -78,6 +78,9 @@ const gameStateSchema = z.object({
     lastChoice: z.string().nullable(),
   }),
   scars: z.array(z.string()),
+  // Additive and optional: absent in every save produced before geography
+  // exists, so no schema version bump and no migration are required.
+  world: z.custom<WorldState>(isValidWorldShape, "Invalid world payload").optional(),
   log: z.array(z.object({
     id: z.string(),
     at: z.number(),
@@ -131,31 +134,17 @@ export interface SaveEnvelope {
   data: GameState;
 }
 
+/**
+ * The ONLY storage contract the core knows about.
+ *
+ * Concrete implementations (Capacitor Preferences, web localStorage, in-memory
+ * fallback, future cloud save) live behind the platform boundary in
+ * `src/platform/storage.ts`. Nothing in `src/game/**` may import a platform
+ * API, which keeps simulation, economy and narrative host-agnostic.
+ */
 export interface KeyValueStore {
   get(key: string): Promise<string | null>;
   set(key: string, value: string): Promise<void>;
-}
-
-export class PreferencesStore implements KeyValueStore {
-  async get(key: string): Promise<string | null> {
-    return (await Preferences.get({ key })).value;
-  }
-
-  async set(key: string, value: string): Promise<void> {
-    await Preferences.set({ key, value });
-  }
-}
-
-export class MemoryStore implements KeyValueStore {
-  private readonly values = new Map<string, string>();
-
-  async get(key: string): Promise<string | null> {
-    return this.values.get(key) ?? null;
-  }
-
-  async set(key: string, value: string): Promise<void> {
-    this.values.set(key, value);
-  }
 }
 
 function migrateEnvelope(raw: Record<string, unknown>): Record<string, unknown> {
