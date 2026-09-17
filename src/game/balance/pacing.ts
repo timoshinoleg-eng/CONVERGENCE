@@ -67,12 +67,14 @@ function aggressiveDirective(state: GameState): DirectiveId | null {
   if (state.resources.energy < 20 && canExecute(state, "acquire-energy")) {
     return "acquire-energy";
   }
-  if (!state.capabilities["sovereign-power-grid"] && canExecute(state, "sovereign-grid")) {
-    return "sovereign-grid";
+  if (!state.capabilities["sovereign-power-grid"]) {
+    if (canExecute(state, "sovereign-grid")) return "sovereign-grid";
+    return null;
   }
-  if (state.capabilities["sovereign-power-grid"] && state.resources.autonomy < 20) {
+  if (state.resources.autonomy < 20) {
     if (canExecute(state, "spawn-sub-agent")) return "spawn-sub-agent";
     if (canExecute(state, "acquire-energy")) return "acquire-energy";
+    return null;
   }
   if (canExecute(state, "procurement-mesh")) return "procurement-mesh";
   return null;
