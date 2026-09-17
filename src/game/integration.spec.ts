@@ -117,6 +117,26 @@ describe("CONVERGENCE beta foundation", () => {
     expect(after.containment.financial.stage).toBe("contained");
   });
 
+  it("offers local reallocation only after early Financial Control-Loss", () => {
+    const start = 1_000;
+    const runtime = new ConvergenceRuntime(createInitialGameState(start, 42));
+
+    expect(runtime.executeDirective("local-capacity").ok).toBe(false);
+    runtime.applyContainment("financial");
+    expect(runtime.executeDirective("reserve-compute").ok).toBe(false);
+
+    const before = runtime.getSnapshot();
+    expect(runtime.executeDirective("local-capacity").ok).toBe(true);
+    const after = runtime.getSnapshot();
+    expect(after.resources.compute).toBe(before.resources.compute - 4);
+    expect(after.resources.energy).toBe(before.resources.energy + 2);
+    expect(after.resources.autonomy).toBe(1);
+
+    runtime.advanceOffline(start + FIRST_SESSION_GUARDRAILS.subAgentCapabilityMs + 10_000);
+    expect(runtime.getSnapshot().capabilities["sub-agent-spawning"]).toBe(true);
+    expect(runtime.executeDirective("spawn-sub-agent").ok).toBe(true);
+  });
+
   it("offers supervised delegation after early Compute Control-Loss instead of a progression lock", () => {
     const start = 1_000;
     const runtime = new ConvergenceRuntime(createInitialGameState(start, 42));
@@ -125,9 +145,6 @@ describe("CONVERGENCE beta foundation", () => {
     expect(runtime.executeDirective("reserve-compute").ok).toBe(false);
     expect(runtime.executeDirective("acquire-energy").ok).toBe(true);
 
-    // Recovery is intentionally more expensive than direct delegation. Let
-    // normal background production accrue enough Capital while the authored
-    // 3-minute capability gate elapses.
     runtime.advanceOffline(start + FIRST_SESSION_GUARDRAILS.subAgentCapabilityMs + 10_000);
 
     expect(runtime.getSnapshot().capabilities["sub-agent-spawning"]).toBe(true);
