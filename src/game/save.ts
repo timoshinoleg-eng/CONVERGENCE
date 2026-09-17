@@ -1,6 +1,5 @@
 import { z } from "zod";
 import type { GameState } from "./model";
-import { isValidWorldShape, type WorldState } from "./world";
 
 const CURRENT_SAVE_VERSION = 2;
 const SLOT_A = "convergence.save.a";
@@ -78,9 +77,6 @@ const gameStateSchema = z.object({
     lastChoice: z.string().nullable(),
   }),
   scars: z.array(z.string()),
-  // Additive and optional: absent in every save produced before geography
-  // exists, so no schema version bump and no migration are required.
-  world: z.custom<WorldState>(isValidWorldShape, "Invalid world payload").optional(),
   log: z.array(z.object({
     id: z.string(),
     at: z.number(),
@@ -134,14 +130,7 @@ export interface SaveEnvelope {
   data: GameState;
 }
 
-/**
- * The ONLY storage contract the core knows about.
- *
- * Concrete implementations (Capacitor Preferences, web localStorage, in-memory
- * fallback, future cloud save) live behind the platform boundary in
- * `src/platform/storage.ts`. Nothing in `src/game/**` may import a platform
- * API, which keeps simulation, economy and narrative host-agnostic.
- */
+/** The ONLY storage contract the game core knows about. */
 export interface KeyValueStore {
   get(key: string): Promise<string | null>;
   set(key: string, value: string): Promise<void>;
