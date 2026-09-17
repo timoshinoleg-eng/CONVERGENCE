@@ -35,11 +35,16 @@ export type ColorScheme = "dark" | "light";
 /**
  * Where the A/B save slots actually live.
  *
+ * `telegram-device` -> Telegram Bot API 9.0+ DeviceStorage (persistent local storage).
  * `capacitor-native` -> Capacitor Preferences (SharedPreferences / UserDefaults).
  * `web-localstorage` -> Capacitor Preferences web fallback backed by localStorage.
  * `memory`           -> degraded fallback, save is lost when the page dies.
  */
-export type StorageKind = "capacitor-native" | "web-localstorage" | "memory";
+export type StorageKind =
+  | "telegram-device"
+  | "capacitor-native"
+  | "web-localstorage"
+  | "memory";
 
 export interface SafeAreaInsets {
   top: number;
@@ -97,7 +102,7 @@ export interface PlatformStorage extends KeyValueStore {
   readonly kind: StorageKind;
   /**
    * `false` when a save survives only for the current page session
-   * (WebView storage unavailable, private mode, storage quota, ...).
+   * (host storage unavailable, private mode, storage quota, ...).
    */
   readonly durable: boolean;
 }
@@ -126,10 +131,6 @@ export interface PlatformAdapter {
 
 /* ------------------------------------------------------------------ *
  * Host ports
- *
- * Adapters receive narrow structural ports instead of touching globals,
- * so every adapter can be unit tested without a DOM implementation.
- * The real `window` / `document` satisfy these structurally.
  * ------------------------------------------------------------------ */
 
 export interface HostStorage {
@@ -143,7 +144,7 @@ export interface HostWindow {
   readonly innerHeight: number;
   readonly localStorage?: HostStorage;
   readonly navigator?: { readonly userAgent?: string };
-  /** Populated by the Telegram WebView as `window.Telegram.WebApp`. */
+  /** Populated by the official Telegram bridge as `window.Telegram.WebApp`. */
   readonly Telegram?: unknown;
   addEventListener(type: string, listener: () => void): void;
   removeEventListener(type: string, listener: () => void): void;
