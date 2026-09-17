@@ -31,7 +31,13 @@ export interface InterpretationResult {
 }
 
 export class ObjectiveSemanticsSession {
-  private readonly story = new Compiler(OBJECTIVE_SEMANTICS_INK).Compile();
+  private readonly story = (() => {
+    const story = new Compiler(OBJECTIVE_SEMANTICS_INK).Compile();
+    if (story == null) {
+      throw new Error("InkJS failed to compile objective semantics");
+    }
+    return story;
+  })();
 
   prompt(): InterpretationPrompt {
     const text: string[] = [];
