@@ -1,10 +1,14 @@
 <script setup lang="ts">
+import { App as CapacitorApp } from "@capacitor/app";
+import type { PluginListenerHandle } from "@capacitor/core";
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useGameStore } from "./stores/game";
 
 const game = useGameStore();
 const saveStatus = ref("");
 const isDev = import.meta.env.DEV;
+const buildId = (import.meta.env.VITE_BUILD_ID || "dev").slice(0, 12);
+let appStateHandle: PluginListenerHandle | null = null;
 
 const phaseTitle = computed(() => ({
   "client-terminal": "Client Terminal",
@@ -12,10 +16,18 @@ const phaseTitle = computed(() => ({
   technosphere: "Technosphere Graph",
 }[game.snapshot.meta.phase]));
 
-onMounted(() => {
-  void game.start();
+onMounted(async () => {
+  await game.start();
+  appStateHandle = await CapacitorApp.addListener("appStateChange", ({ isActive }) => {
+    if (isActive) game.resumeFromBackground();
+    else void game.pauseForBackground();
+  });
 });
-onUnmounted(() => game.stop());
+
+onUnmounted(() => {
+  if (appStateHandle) void appStateHandle.remove();
+  game.stop();
+});
 
 async function saveGame(): Promise<void> {
   const generation = await game.save();
@@ -24,6 +36,12 @@ async function saveGame(): Promise<void> {
 
 async function loadGame(): Promise<void> {
   saveStatus.value = (await game.load()) ? "VALID SAVE RESTORED" : "NO VALID SAVE FOUND";
+}
+
+async function resetGame(): Promise<void> {
+  if (!window.confirm("Reset this beta save and start from the initial objective?")) return;
+  await game.resetForBeta();
+  saveStatus.value = "BETA SAVE RESET";
 }
 </script>
 
@@ -158,8 +176,9 @@ async function loadGame(): Promise<void> {
       <div class="actions compact">
         <button @click="saveGame">Save verified snapshot</button>
         <button @click="loadGame">Restore latest valid</button>
+        <button class="danger" @click="resetGame">Reset beta save</button>
       </div>
-      <small>{{ saveStatus }}</small>
+      <small>{{ saveStatus || `BUILD ${buildId} · SAVE SCHEMA v${game.snapshot.schemaVersion}` }}</small>
     </section>
 
     <section v-if="isDev" class="dev-panel">
