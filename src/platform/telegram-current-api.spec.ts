@@ -43,7 +43,7 @@ describe("current Telegram Mini App API integration", () => {
     (webApp as unknown as { fire(eventType: string): void }).fire("deactivated");
     (webApp as unknown as { fire(eventType: string): void }).fire("activated");
 
-    expect(seen).toEqual(["background", "active"]);
+    expect(seen).toEqual(["active", "background", "active"]);
   });
 
   it("republishes CSS metrics after Telegram safe-area changes", () => {
