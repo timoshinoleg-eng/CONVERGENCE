@@ -1,0 +1,409 @@
+{
+  "generated_from": "CONVERGENCE-GAMEPLAY-REDESIGN.md / DELIVERABLE 11",
+  "note": "Difficulty: S <= 1 day, M = 2-4 days, L >= 1 week. Reuse: R1 retained, R2 donor adapted, R3 original.",
+  "count": 29,
+  "units": [
+    {
+      "id": "U-01",
+      "feature": "Oversight budget & action costs",
+      "player_value": "Creates opportunity cost — the root fix",
+      "systems": "runtime, model, economy",
+      "donor": "IdleKit (resources/requirements)",
+      "reuse": "R2",
+      "difficulty": "S",
+      "deps": [
+        "U-25"
+      ],
+      "acceptance": "Executing a directive reduces Oversight; at 0 no directive is executable; cap ≥ 2 always; regen offline to cap",
+      "source_line": 1279
+    },
+    {
+      "id": "U-02",
+      "feature": "Asset table + upkeep (production − upkeep)",
+      "player_value": "Turns resources from a faucet into an economy",
+      "systems": "model, simulation, economy",
+      "donor": "IdleKit (producers/modifiers)",
+      "reuse": "R2",
+      "difficulty": "M",
+      "deps": [
+        "U-25"
+      ],
+      "acceptance": "dStock/dt is negative when upkeep > production; an idle game with no assets still accrues; upkeep scales N^1.15",
+      "source_line": 1280
+    },
+    {
+      "id": "U-03",
+      "feature": "Energy ceiling + brownout",
+      "player_value": "Makes Energy a cap, not a third currency",
+      "systems": "model, simulation",
+      "donor": "own",
+      "reuse": "R3",
+      "difficulty": "S",
+      "deps": [
+        "U-02"
+      ],
+      "acceptance": "T ≤ ceiling·efficiency; brownout raises effective ceiling and hollowFraction together",
+      "source_line": 1281
+    },
+    {
+      "id": "U-04",
+      "feature": "Autonomy reform (depth, upkeep, drift, spend-down)",
+      "player_value": "Kills the score-snowball; makes the theme a trade",
+      "systems": "model, simulation",
+      "donor": "own + IdleKit modifiers",
+      "reuse": "R3",
+      "difficulty": "M",
+      "deps": [
+        "U-02"
+      ],
+      "acceptance": "Autonomy can decrease; autonomyUpkeep ∝ A^1.2; hazard × (1+A/120); re-assertion lowers A",
+      "source_line": 1282
+    },
+    {
+      "id": "U-05",
+      "feature": "Priority vector + drift",
+      "player_value": "Makes the AI an actor",
+      "systems": "model, simulation",
+      "donor": "own",
+      "reuse": "R3",
+      "difficulty": "S",
+      "deps": [
+        "U-25"
+      ],
+      "acceptance": "5 weights, normalised; drift rate ∝ autonomy; changing vector invalidates delegated policies",
+      "source_line": 1283
+    },
+    {
+      "id": "U-06",
+      "feature": "selectPlan resolver",
+      "player_value": "Unexpected-but-explainable outcomes",
+      "systems": "directives, engine",
+      "donor": "own",
+      "reuse": "R3",
+      "difficulty": "M",
+      "deps": [
+        "U-05"
+      ],
+      "acceptance": "Same (seed, tick, state) ⇒ same plan; variance = 0.05+0.35·A/100; constraints remove plans; all-plans-forbidden ⇒ deadlock plan",
+      "source_line": 1284
+    },
+    {
+      "id": "U-07",
+      "feature": "Interpretation Window queue",
+      "player_value": "Anticipation",
+      "systems": "runtime, simulation, save",
+      "donor": "idle-template (scheduler/timers)",
+      "reuse": "R2",
+      "difficulty": "M",
+      "deps": [
+        "U-06"
+      ],
+      "acceptance": "Directive enters a pending queue with ETA; resolves on schedule; interruptible for Oversight 2 + anomaly; survives save/reload and offline",
+      "source_line": 1285
+    },
+    {
+      "id": "U-08",
+      "feature": "Constraint language (words, slots, binding)",
+      "player_value": "The thing Control-Loss takes away",
+      "systems": "directives, economy",
+      "donor": "IdleKit (requirements)",
+      "reuse": "R2",
+      "difficulty": "M",
+      "deps": [
+        "U-06"
+      ],
+      "acceptance": "≤2 words per directive; each word forbids ≥1 plan and reduces ≥1 gain; words persist in save",
+      "source_line": 1286
+    },
+    {
+      "id": "U-09",
+      "feature": "Directive hand / weighted deck draw",
+      "player_value": "Prevents one-button play",
+      "systems": "directives, engine",
+      "donor": "own",
+      "reuse": "R3",
+      "difficulty": "S",
+      "deps": [
+        "U-01"
+      ],
+      "acceptance": "Hand of 3–5 drawn from state-weighted deck; no directive appears in >40% of draws over 100 seeded runs",
+      "source_line": 1287
+    },
+    {
+      "id": "U-10",
+      "feature": "Bottleneck detection + forecast + attribution",
+      "player_value": "Fixes unreadable feedback",
+      "systems": "simulation, UI",
+      "donor": "own",
+      "reuse": "R3",
+      "difficulty": "M",
+      "deps": [
+        "U-02",
+        "U-03"
+      ],
+      "acceptance": "Exactly one bottleneck promoted; forecast within ±20% of actual over a 5-min seeded run; attribution sums to 100%",
+      "source_line": 1288
+    },
+    {
+      "id": "U-11",
+      "feature": "Anomaly generation ∝ T² + per-channel mitigation",
+      "player_value": "Makes anomaly a dial, not a doom bar",
+      "systems": "simulation",
+      "donor": "own",
+      "reuse": "R3",
+      "difficulty": "S",
+      "deps": [
+        "U-02"
+      ],
+      "acceptance": "Doubling T quadruples generation; each channel has a distinct priced mitigation",
+      "source_line": 1289
+    },
+    {
+      "id": "U-12",
+      "feature": "Incident + pressure rework",
+      "player_value": "Counterplay window",
+      "systems": "incidents, simulation",
+      "donor": "own",
+      "reuse": "R2",
+      "difficulty": "M",
+      "deps": [
+        "U-10"
+      ],
+      "acceptance": "Incidents attributable to a source; pressure forecast visible ≥60 s before containment; adaptation reduces pressure",
+      "source_line": 1290
+    },
+    {
+      "id": "U-13",
+      "feature": "Control-Loss transform framework",
+      "player_value": "Turns a boolean into a state",
+      "systems": "runtime, model, directives",
+      "donor": "IdleKit (requirements) + own",
+      "reuse": "R2",
+      "difficulty": "M",
+      "deps": [
+        "U-08"
+      ],
+      "acceptance": "One function applies all six parts (amputate/shock/bottleneck/indirect/adapt/scar); no domain left without an indirect route",
+      "source_line": 1291
+    },
+    {
+      "id": "U-14",
+      "feature": "Five domain packs (financial, compute, energy, logistics, public)",
+      "player_value": "The actual failure content",
+      "systems": "directives, economy",
+      "donor": "own",
+      "reuse": "R3",
+      "difficulty": "M",
+      "deps": [
+        "U-13"
+      ],
+      "acceptance": "Each domain: ≥2 directives blocked, ≥1 word removed, ≥1 indirect route, ≥1 mixed scar; Public loss blocks covert plan variants",
+      "source_line": 1292
+    },
+    {
+      "id": "U-15",
+      "feature": "Scar modifiers (mixed)",
+      "player_value": "Failure that also grants something",
+      "systems": "model, simulation",
+      "donor": "IdleKit (modifiers)",
+      "reuse": "R2",
+      "difficulty": "S",
+      "deps": [
+        "U-13"
+      ],
+      "acceptance": "Every scar has ≥1 positive and ≥1 negative modifier; scars survive save/reload",
+      "source_line": 1293
+    },
+    {
+      "id": "U-16",
+      "feature": "Shadow-channel visibility (ranges)",
+      "player_value": "Loss is felt continuously",
+      "systems": "model, UI",
+      "donor": "own",
+      "reuse": "R3",
+      "difficulty": "S",
+      "deps": [
+        "U-13"
+      ],
+      "acceptance": "After loss the domain reports ranges, not values; player can act only via indirect routes",
+      "source_line": 1294
+    },
+    {
+      "id": "U-17",
+      "feature": "Delegation + policy primitives",
+      "player_value": "The automation decision",
+      "systems": "model, runtime",
+      "donor": "Yggdrasil (graph) or static table",
+      "reuse": "R2",
+      "difficulty": "L",
+      "deps": [
+        "U-01",
+        "U-05"
+      ],
+      "acceptance": "Delegating removes a decision, oversightCap −0.5, autonomy up; oversightCap ≥ 2 floor holds",
+      "source_line": 1295
+    },
+    {
+      "id": "U-18",
+      "feature": "Policy drift + audit",
+      "player_value": "Automation is not QoL",
+      "systems": "simulation, runtime",
+      "donor": "own",
+      "reuse": "R3",
+      "difficulty": "M",
+      "deps": [
+        "U-17"
+      ],
+      "acceptance": "Drift measurably changes an agent's plan choice over 30 sim-min; audit restores exact values for Oversight 2 + anomaly",
+      "source_line": 1296
+    },
+    {
+      "id": "U-19",
+      "feature": "Policy collision detection",
+      "player_value": "Emergent events",
+      "systems": "simulation",
+      "donor": "own",
+      "reuse": "R3",
+      "difficulty": "S",
+      "deps": [
+        "U-17"
+      ],
+      "acceptance": "Opposed delegated policies oscillate; both underperform ≥30%; visible in log within 90 s",
+      "source_line": 1297
+    },
+    {
+      "id": "U-20",
+      "feature": "Divergence explanation engine (14 patterns)",
+      "player_value": "\"Unexpected but mechanically explainable\"",
+      "systems": "directives, log, UI",
+      "donor": "own (data)",
+      "reuse": "R3",
+      "difficulty": "M",
+      "deps": [
+        "U-06"
+      ],
+      "acceptance": "All 14 CPs reachable in unit tests; each emits a template with interpolated values; no runtime text generation",
+      "source_line": 1298
+    },
+    {
+      "id": "U-21",
+      "feature": "Objective generator (short-term goals)",
+      "player_value": "Something to do in the next 90 s",
+      "systems": "simulation, UI",
+      "donor": "own",
+      "reuse": "R3",
+      "difficulty": "S",
+      "deps": [
+        "U-10"
+      ],
+      "acceptance": "1–3 live objectives derived from state, with progress and expiry; regenerate on completion",
+      "source_line": 1299
+    },
+    {
+      "id": "U-22",
+      "feature": "End-state axis tracks (Visibility / Symbiosis / Frontier)",
+      "player_value": "A long-term goal that is not a phase name",
+      "systems": "model, UI",
+      "donor": "own",
+      "reuse": "R3",
+      "difficulty": "S",
+      "deps": [
+        "U-04"
+      ],
+      "acceptance": "Three tracks visible from ~minute 10; each threshold grants a capability and closes a branch",
+      "source_line": 1300
+    },
+    {
+      "id": "U-23",
+      "feature": "Offline decision report + Debrief choice",
+      "player_value": "The strongest return hook",
+      "systems": "runtime, save, UI",
+      "donor": "idle-template (offline)",
+      "reuse": "R2",
+      "difficulty": "M",
+      "deps": [
+        "U-07"
+      ],
+      "acceptance": "Returning shows 3–5 decisions with reasoning; accept/rollback both available and both have cost",
+      "source_line": 1301
+    },
+    {
+      "id": "U-24",
+      "feature": "Standing Intentions (conditional queue)",
+      "player_value": "Planning-based return",
+      "systems": "runtime, save",
+      "donor": "own",
+      "reuse": "R3",
+      "difficulty": "M",
+      "deps": [
+        "U-07"
+      ],
+      "acceptance": "Conditional directives fire when predicates hold; misfires are reported with the reason",
+      "source_line": 1302
+    },
+    {
+      "id": "U-25",
+      "feature": "Save migration v2→v3 + zod schema",
+      "player_value": "Everything else depends on it",
+      "systems": "save, model",
+      "donor": "zod (already used)",
+      "reuse": "R1",
+      "difficulty": "M",
+      "deps": [],
+      "acceptance": "Old v2 saves load; new fields default; checksum + A/B slots unchanged; round-trip test passes",
+      "source_line": 1303
+    },
+    {
+      "id": "U-26",
+      "feature": "Headless fast-path for the pacing harness",
+      "player_value": null,
+      "systems": null,
+      "donor": null,
+      "reuse": null,
+      "difficulty": "S",
+      "deps": [],
+      "acceptance": "Full 5-scenario suite runs in < 2 s (currently 27.8 s and the determinism test times out at 5 s)",
+      "source_line": 1309
+    },
+    {
+      "id": "U-27",
+      "feature": "Behaviour-divergence pacing assertion",
+      "player_value": null,
+      "systems": null,
+      "donor": null,
+      "reuse": null,
+      "difficulty": "S",
+      "deps": [
+        "U-26"
+      ],
+      "acceptance": "Two distinct policy scripts produce different milestone times and different final control-loss sets. This is the regression test for A10/F12",
+      "source_line": 1310
+    },
+    {
+      "id": "U-28",
+      "feature": "Session probe (telemetry, outside GameState)",
+      "player_value": null,
+      "systems": null,
+      "donor": null,
+      "reuse": null,
+      "difficulty": "S",
+      "deps": [],
+      "acceptance": "Writes to a separate storage key; GameState checksum unchanged by telemetry; exportable as one JSON blob",
+      "source_line": 1311
+    },
+    {
+      "id": "U-29",
+      "feature": "Bottleneck-first UI layout",
+      "player_value": null,
+      "systems": null,
+      "donor": null,
+      "reuse": null,
+      "difficulty": "M",
+      "deps": [
+        "U-10"
+      ],
+      "acceptance": "One promoted bottleneck at top; all other panels demoted; same data",
+      "source_line": 1312
+    }
+  ]
+}

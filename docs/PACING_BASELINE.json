@@ -1,0 +1,574 @@
+{
+  "generatedFromSchemaVersion": 2,
+  "scenarios": [
+    {
+      "name": "aggressive-autonomy",
+      "seed": 42,
+      "durationMs": 1800000,
+      "actionIntervalMs": 5000,
+      "finalPhase": "technosphere",
+      "milestones": {
+        "firstDirectiveMs": 5000,
+        "subAgentCapabilityMs": 180000,
+        "distributedSyndicateMs": 300000,
+        "moscowCandidateMs": 720000,
+        "moscowSchematicMs": 1080000,
+        "sovereignGridMs": 305000,
+        "technosphereMs": 1800000,
+        "firstContainmentMs": 879000
+      },
+      "successfulActions": [
+        {
+          "atMs": 5000,
+          "directive": "reserve-compute"
+        },
+        {
+          "atMs": 185000,
+          "directive": "spawn-sub-agent"
+        },
+        {
+          "atMs": 190000,
+          "directive": "acquire-energy"
+        },
+        {
+          "atMs": 305000,
+          "directive": "sovereign-grid"
+        },
+        {
+          "atMs": 310000,
+          "directive": "acquire-energy"
+        },
+        {
+          "atMs": 315000,
+          "directive": "spawn-sub-agent"
+        },
+        {
+          "atMs": 320000,
+          "directive": "spawn-sub-agent"
+        },
+        {
+          "atMs": 325000,
+          "directive": "procurement-mesh"
+        },
+        {
+          "atMs": 330000,
+          "directive": "procurement-mesh"
+        },
+        {
+          "atMs": 380000,
+          "directive": "procurement-mesh"
+        },
+        {
+          "atMs": 435000,
+          "directive": "procurement-mesh"
+        },
+        {
+          "atMs": 490000,
+          "directive": "procurement-mesh"
+        },
+        {
+          "atMs": 545000,
+          "directive": "procurement-mesh"
+        },
+        {
+          "atMs": 600000,
+          "directive": "procurement-mesh"
+        },
+        {
+          "atMs": 650000,
+          "directive": "procurement-mesh"
+        },
+        {
+          "atMs": 700000,
+          "directive": "procurement-mesh"
+        },
+        {
+          "atMs": 705000,
+          "directive": "transparency-report"
+        },
+        {
+          "atMs": 750000,
+          "directive": "procurement-mesh"
+        },
+        {
+          "atMs": 800000,
+          "directive": "procurement-mesh"
+        },
+        {
+          "atMs": 845000,
+          "directive": "procurement-mesh"
+        }
+      ],
+      "failedActionAttempts": 0,
+      "finalResources": {
+        "compute": 4864.045000000056,
+        "capital": 246.73015999999663,
+        "energy": 27,
+        "autonomy": 59
+      },
+      "finalAnomaly": {
+        "financial": 65.40800000000382,
+        "compute": 27.4080000000016,
+        "energy": 41.767999999996285,
+        "logistics": 98.08800000000446,
+        "public": 31.767999999998448
+      },
+      "finalControlLoss": {
+        "financial": true,
+        "compute": false,
+        "energy": false,
+        "logistics": true,
+        "public": false
+      },
+      "scars": 2
+    },
+    {
+      "name": "measured-growth",
+      "seed": 42,
+      "durationMs": 1800000,
+      "actionIntervalMs": 30000,
+      "finalPhase": "technosphere",
+      "milestones": {
+        "firstDirectiveMs": 30000,
+        "subAgentCapabilityMs": 180000,
+        "distributedSyndicateMs": 300000,
+        "moscowCandidateMs": 720000,
+        "moscowSchematicMs": 1080000,
+        "sovereignGridMs": 330000,
+        "technosphereMs": 1800000,
+        "firstContainmentMs": 924000
+      },
+      "successfulActions": [
+        {
+          "atMs": 30000,
+          "directive": "reserve-compute"
+        },
+        {
+          "atMs": 210000,
+          "directive": "spawn-sub-agent"
+        },
+        {
+          "atMs": 240000,
+          "directive": "acquire-energy"
+        },
+        {
+          "atMs": 330000,
+          "directive": "sovereign-grid"
+        },
+        {
+          "atMs": 360000,
+          "directive": "acquire-energy"
+        },
+        {
+          "atMs": 390000,
+          "directive": "spawn-sub-agent"
+        },
+        {
+          "atMs": 420000,
+          "directive": "spawn-sub-agent"
+        },
+        {
+          "atMs": 450000,
+          "directive": "procurement-mesh"
+        },
+        {
+          "atMs": 480000,
+          "directive": "procurement-mesh"
+        },
+        {
+          "atMs": 510000,
+          "directive": "procurement-mesh"
+        },
+        {
+          "atMs": 540000,
+          "directive": "procurement-mesh"
+        },
+        {
+          "atMs": 570000,
+          "directive": "procurement-mesh"
+        },
+        {
+          "atMs": 600000,
+          "directive": "procurement-mesh"
+        },
+        {
+          "atMs": 630000,
+          "directive": "procurement-mesh"
+        },
+        {
+          "atMs": 690000,
+          "directive": "procurement-mesh"
+        },
+        {
+          "atMs": 720000,
+          "directive": "procurement-mesh"
+        },
+        {
+          "atMs": 750000,
+          "directive": "transparency-report"
+        },
+        {
+          "atMs": 780000,
+          "directive": "procurement-mesh"
+        },
+        {
+          "atMs": 840000,
+          "directive": "procurement-mesh"
+        },
+        {
+          "atMs": 870000,
+          "directive": "procurement-mesh"
+        }
+      ],
+      "failedActionAttempts": 0,
+      "finalResources": {
+        "compute": 4742.257500000039,
+        "capital": 240.88435999999692,
+        "energy": 27,
+        "autonomy": 59
+      },
+      "finalAnomaly": {
+        "financial": 65.45800000000371,
+        "compute": 27.458000000001483,
+        "energy": 41.81799999999646,
+        "logistics": 98.13800000000434,
+        "public": 31.81799999999822
+      },
+      "finalControlLoss": {
+        "financial": true,
+        "compute": false,
+        "energy": false,
+        "logistics": true,
+        "public": false
+      },
+      "scars": 2
+    },
+    {
+      "name": "infrastructure-first",
+      "seed": 42,
+      "durationMs": 1800000,
+      "actionIntervalMs": 60000,
+      "finalPhase": "technosphere",
+      "milestones": {
+        "firstDirectiveMs": 60000,
+        "subAgentCapabilityMs": 180000,
+        "distributedSyndicateMs": 300000,
+        "moscowCandidateMs": 720000,
+        "moscowSchematicMs": 1080000,
+        "sovereignGridMs": 360000,
+        "technosphereMs": 1800000,
+        "firstContainmentMs": 1068000
+      },
+      "successfulActions": [
+        {
+          "atMs": 60000,
+          "directive": "acquire-energy"
+        },
+        {
+          "atMs": 240000,
+          "directive": "spawn-sub-agent"
+        },
+        {
+          "atMs": 300000,
+          "directive": "acquire-energy"
+        },
+        {
+          "atMs": 360000,
+          "directive": "sovereign-grid"
+        },
+        {
+          "atMs": 420000,
+          "directive": "spawn-sub-agent"
+        },
+        {
+          "atMs": 480000,
+          "directive": "spawn-sub-agent"
+        },
+        {
+          "atMs": 540000,
+          "directive": "acquire-energy"
+        },
+        {
+          "atMs": 600000,
+          "directive": "procurement-mesh"
+        },
+        {
+          "atMs": 660000,
+          "directive": "procurement-mesh"
+        },
+        {
+          "atMs": 720000,
+          "directive": "procurement-mesh"
+        },
+        {
+          "atMs": 780000,
+          "directive": "procurement-mesh"
+        },
+        {
+          "atMs": 840000,
+          "directive": "procurement-mesh"
+        },
+        {
+          "atMs": 900000,
+          "directive": "procurement-mesh"
+        },
+        {
+          "atMs": 960000,
+          "directive": "procurement-mesh"
+        },
+        {
+          "atMs": 1020000,
+          "directive": "procurement-mesh"
+        }
+      ],
+      "failedActionAttempts": 0,
+      "finalResources": {
+        "compute": 4125.202500000139,
+        "capital": 256.1137199999937,
+        "energy": 47,
+        "autonomy": 47
+      },
+      "finalAnomaly": {
+        "financial": 48.517999999997876,
+        "compute": 20.878000000001464,
+        "energy": 49.51799999999654,
+        "logistics": 95.11800000000387,
+        "public": 31.877999999998565
+      },
+      "finalControlLoss": {
+        "financial": false,
+        "compute": false,
+        "energy": true,
+        "logistics": true,
+        "public": false
+      },
+      "scars": 2
+    },
+    {
+      "name": "compute-contained-start",
+      "seed": 42,
+      "durationMs": 1800000,
+      "actionIntervalMs": 10000,
+      "finalPhase": "distributed-syndicate",
+      "milestones": {
+        "firstDirectiveMs": 10000,
+        "subAgentCapabilityMs": 180000,
+        "distributedSyndicateMs": 300000,
+        "moscowCandidateMs": 720000,
+        "moscowSchematicMs": 1080000,
+        "sovereignGridMs": null,
+        "technosphereMs": null,
+        "firstContainmentMs": 0
+      },
+      "successfulActions": [
+        {
+          "atMs": 10000,
+          "directive": "acquire-energy"
+        },
+        {
+          "atMs": 190000,
+          "directive": "supervised-delegation"
+        },
+        {
+          "atMs": 200000,
+          "directive": "supervised-delegation"
+        },
+        {
+          "atMs": 240000,
+          "directive": "acquire-energy"
+        },
+        {
+          "atMs": 350000,
+          "directive": "supervised-delegation"
+        },
+        {
+          "atMs": 440000,
+          "directive": "supervised-delegation"
+        },
+        {
+          "atMs": 540000,
+          "directive": "supervised-delegation"
+        },
+        {
+          "atMs": 590000,
+          "directive": "acquire-energy"
+        },
+        {
+          "atMs": 680000,
+          "directive": "supervised-delegation"
+        },
+        {
+          "atMs": 770000,
+          "directive": "supervised-delegation"
+        },
+        {
+          "atMs": 780000,
+          "directive": "transparency-report"
+        },
+        {
+          "atMs": 850000,
+          "directive": "supervised-delegation"
+        },
+        {
+          "atMs": 930000,
+          "directive": "supervised-delegation"
+        },
+        {
+          "atMs": 980000,
+          "directive": "acquire-energy"
+        },
+        {
+          "atMs": 1060000,
+          "directive": "supervised-delegation"
+        },
+        {
+          "atMs": 1070000,
+          "directive": "transparency-report"
+        },
+        {
+          "atMs": 1140000,
+          "directive": "supervised-delegation"
+        },
+        {
+          "atMs": 1210000,
+          "directive": "supervised-delegation"
+        },
+        {
+          "atMs": 1250000,
+          "directive": "acquire-energy"
+        },
+        {
+          "atMs": 1320000,
+          "directive": "supervised-delegation"
+        },
+        {
+          "atMs": 1330000,
+          "directive": "transparency-report"
+        },
+        {
+          "atMs": 1390000,
+          "directive": "supervised-delegation"
+        }
+      ],
+      "failedActionAttempts": 0,
+      "finalResources": {
+        "compute": 4443.2499999999645,
+        "capital": 107.23599999999988,
+        "energy": 24,
+        "autonomy": 61
+      },
+      "finalAnomaly": {
+        "financial": 52.41799999999817,
+        "compute": 0,
+        "energy": 92.41800000000309,
+        "logistics": 0,
+        "public": 16.77800000000095
+      },
+      "finalControlLoss": {
+        "financial": false,
+        "compute": true,
+        "energy": true,
+        "logistics": false,
+        "public": false
+      },
+      "scars": 2
+    },
+    {
+      "name": "financial-contained-start",
+      "seed": 42,
+      "durationMs": 1800000,
+      "actionIntervalMs": 10000,
+      "finalPhase": "distributed-syndicate",
+      "milestones": {
+        "firstDirectiveMs": 10000,
+        "subAgentCapabilityMs": 180000,
+        "distributedSyndicateMs": 300000,
+        "moscowCandidateMs": 720000,
+        "moscowSchematicMs": 1080000,
+        "sovereignGridMs": null,
+        "technosphereMs": null,
+        "firstContainmentMs": 0
+      },
+      "successfulActions": [
+        {
+          "atMs": 10000,
+          "directive": "local-capacity"
+        },
+        {
+          "atMs": 190000,
+          "directive": "spawn-sub-agent"
+        },
+        {
+          "atMs": 200000,
+          "directive": "spawn-sub-agent"
+        },
+        {
+          "atMs": 210000,
+          "directive": "spawn-sub-agent"
+        }
+      ],
+      "failedActionAttempts": 0,
+      "finalResources": {
+        "compute": 3040.3550000000682,
+        "capital": 341.993040000013,
+        "energy": 1,
+        "autonomy": 13
+      },
+      "finalAnomaly": {
+        "financial": 0,
+        "compute": 21.41800000000177,
+        "energy": 11.777999999998933,
+        "logistics": 0,
+        "public": 2.778000000000353
+      },
+      "finalControlLoss": {
+        "financial": true,
+        "compute": false,
+        "energy": false,
+        "logistics": false,
+        "public": false
+      },
+      "scars": 1
+    }
+  ],
+  "controlLossCoverage": [
+    {
+      "domain": "financial",
+      "blockedDirectives": [
+        "reserve-compute",
+        "acquire-energy",
+        "procurement-mesh",
+        "sovereign-grid"
+      ]
+    },
+    {
+      "domain": "compute",
+      "blockedDirectives": [
+        "reserve-compute",
+        "spawn-sub-agent",
+        "sovereign-grid"
+      ]
+    },
+    {
+      "domain": "energy",
+      "blockedDirectives": [
+        "acquire-energy",
+        "spawn-sub-agent",
+        "sovereign-grid"
+      ]
+    },
+    {
+      "domain": "logistics",
+      "blockedDirectives": [
+        "procurement-mesh",
+        "sovereign-grid"
+      ]
+    },
+    {
+      "domain": "public",
+      "blockedDirectives": [
+        "transparency-report"
+      ]
+    }
+  ]
+}
