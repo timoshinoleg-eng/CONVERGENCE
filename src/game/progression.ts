@@ -33,9 +33,6 @@ export function advanceProgression(state: GameState, currentTime: number): Progr
   const previousPhase = state.meta.phase;
   let narrativeMilestone: NarrativeMilestone | null = null;
 
-  // The system derives bounded delegation only after the player has actually
-  // issued at least one directive and accepted some autonomy. This also keeps
-  // early Compute Control-Loss recoverable through the supervised path.
   if (
     !state.capabilities["sub-agent-spawning"]
     && age >= FIRST_SESSION_GUARDRAILS.subAgentCapabilityMs
@@ -57,16 +54,19 @@ export function advanceProgression(state: GameState, currentTime: number): Progr
     state.meta.phase = "distributed-syndicate";
   }
 
-  // Moscow appears first as an aggregate systems inference, not as a map.
+  // Moscow narrative state is intentionally allowed to catch up in any phase
+  // after Client Terminal. This keeps old valid v2 saves (which may already be
+  // Technosphere) compatible without adding a schema migration merely for a
+  // presentation/narrative milestone.
   if (
-    state.meta.phase === "distributed-syndicate"
+    state.meta.phase !== "client-terminal"
     && state.narrative.episode === "objective-semantics-01"
     && age >= FIRST_SESSION_GUARDRAILS.moscowCandidateMs
   ) {
     state.narrative.episode = "moscow-candidate-01";
     narrativeMilestone = "moscow-candidate";
   } else if (
-    state.meta.phase === "distributed-syndicate"
+    state.meta.phase !== "client-terminal"
     && state.narrative.episode === "moscow-candidate-01"
     && age >= FIRST_SESSION_GUARDRAILS.moscowSchematicMs
   ) {
