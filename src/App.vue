@@ -4,6 +4,7 @@ import { useGameStore } from "./stores/game";
 
 const game = useGameStore();
 const saveStatus = ref("");
+const isDev = import.meta.env.DEV;
 
 onMounted(() => game.start());
 onUnmounted(() => game.stop());
@@ -112,7 +113,7 @@ async function loadGame(): Promise<void> {
       <small>{{ saveStatus }}</small>
     </section>
 
-    <section v-if="import.meta.env.DEV" class="dev-panel">
+    <section v-if="isDev" class="dev-panel">
       <span>DEV CONTAINMENT TEST</span>
       <button @click="game.contain('financial')">Lose Financial Control</button>
       <button @click="game.contain('compute')">Lose Compute Control</button>
