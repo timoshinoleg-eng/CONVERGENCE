@@ -1,0 +1,72 @@
+:root {
+  font-family: Inter, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  color: #d8f7ef;
+  background: #050809;
+  font-synthesis: none;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; min-height: 100vh; background: radial-gradient(circle at top, #0a1718 0, #050809 42%); }
+button { font: inherit; }
+
+.shell {
+  width: min(100%, 760px);
+  margin: 0 auto;
+  min-height: 100vh;
+  padding: max(24px, env(safe-area-inset-top)) 18px max(32px, env(safe-area-inset-bottom));
+}
+
+.topbar, .panel-heading, .actions, .compact, .capability-flow { display: flex; align-items: center; }
+.topbar { justify-content: space-between; margin-bottom: 18px; }
+.eyebrow { margin: 0 0 5px; color: #68c7ba; font-size: 11px; letter-spacing: .13em; text-transform: uppercase; }
+h1 { margin: 0; font-size: clamp(26px, 7vw, 40px); font-weight: 540; letter-spacing: -.03em; }
+.status-dot { width: 10px; height: 10px; border-radius: 99px; background: #75f7d3; box-shadow: 0 0 18px #75f7d3; }
+
+.resource-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 10px; }
+.resource-grid article, .panel { border: 1px solid #183334; background: rgba(5, 14, 15, .84); }
+.resource-grid article { padding: 11px; min-width: 0; }
+.resource-grid span, .panel-heading span, .dev-panel > span { display: block; color: #6faaa3; font-size: 10px; letter-spacing: .1em; }
+.resource-grid strong { display: block; margin-top: 7px; color: #ecfff9; font-size: 17px; overflow: hidden; text-overflow: ellipsis; }
+
+.panel { margin-top: 10px; padding: 14px; border-radius: 4px; box-shadow: inset 0 1px rgba(255,255,255,.015); }
+.panel-heading { justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.panel-heading strong { color: #ff7f79; font-size: 12px; }
+.panel-heading small, .persistence-panel small { color: #577a76; }
+
+.anomaly-row { display: grid; grid-template-columns: 72px 1fr 35px; gap: 8px; align-items: center; margin: 7px 0; font-size: 10px; text-transform: uppercase; color: #7aa8a2; }
+.anomaly-row b { font-weight: 500; text-align: right; }
+.meter { height: 4px; background: #112122; overflow: hidden; }
+.meter i { display: block; height: 100%; background: linear-gradient(90deg, #62cab8, #f08378); }
+
+.terminal { min-height: 300px; }
+.log { min-height: 145px; padding: 2px 0 12px; }
+.log p { margin: 0 0 9px; color: #a5c8c2; font-size: 12px; line-height: 1.45; }
+.log p span { color: #3e8078; }
+.log .log-incident { color: #ff8a82; }
+.log .log-decision { color: #d5f4ec; }
+
+.directive-card { border-left: 2px solid #55c8b7; background: #081516; padding: 13px; margin-top: 10px; }
+.directive-card p { margin: 0 0 8px; font-size: 12px; line-height: 1.5; }
+.choices, .actions { gap: 8px; flex-wrap: wrap; }
+button { border: 1px solid #28534f; background: #0a1c1c; color: #bce8df; padding: 10px 12px; border-radius: 3px; cursor: pointer; }
+button:hover { border-color: #59bfb1; color: #effffb; }
+button:disabled { opacity: .35; cursor: not-allowed; }
+button.primary { background: #12302e; border-color: #4da99d; }
+.outcome { margin: 12px 0 0; color: #91ddd1; font-size: 11px; line-height: 1.5; }
+.outcome.failed { color: #ff837c; }
+
+.capability-flow { gap: 6px; overflow-x: auto; }
+.capability-flow span { border: 1px solid #1c3333; padding: 8px 10px; color: #526d69; font-size: 10px; white-space: nowrap; }
+.capability-flow span.unlocked { border-color: #3a8d83; color: #9be3d7; background: #0a1d1c; }
+.capability-flow span + span::before { content: "→"; margin-right: 8px; color: #365c58; }
+
+.persistence-panel { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
+.compact button { padding: 7px 9px; font-size: 10px; }
+.dev-panel { margin-top: 16px; padding: 10px; border: 1px dashed #513836; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; opacity: .75; }
+.dev-panel button { border-color: #603b38; color: #d6948f; padding: 7px 9px; font-size: 10px; }
+
+@media (max-width: 520px) {
+  .resource-grid { grid-template-columns: repeat(2, 1fr); }
+  .persistence-panel { align-items: flex-start; flex-direction: column; }
+}
