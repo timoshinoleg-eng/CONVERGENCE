@@ -481,7 +481,7 @@ export function bindConstraintWord(state: GameState, word: ConstraintWordId | nu
   pending.boundWord = word;
   pending.candidates = next;
   pending.deadlocked = next.length === 0;
-  state.betaV2.progress.meaningfulDecisions += 1;
+  if (word !== null) state.betaV2.progress.meaningfulDecisions += 1;
   return { ok: true };
 }
 
@@ -1088,6 +1088,12 @@ export function executeConcession(
     state.resources.compute -= 12;
     const release = releaseCommitment(state, target.id);
     if (!release.ok) return release;
+    // One accepted concession input is one MeaningfulDecision, not a release
+    // decision plus a concession decision.
+    state.betaV2.progress.meaningfulDecisions = Math.max(
+      0,
+      state.betaV2.progress.meaningfulDecisions - 1,
+    );
     state.resources.autonomy += 2;
     if (!state.scars.includes("CAPACITY_CANNIBALIZED")) state.scars.push("CAPACITY_CANNIBALIZED");
   } else {
@@ -1136,6 +1142,12 @@ export function resolvePressureResponse(
     if (!target) return { ok: false, reason: "No contributing commitment can be shed." };
     const result = releaseCommitment(state, target.id);
     if (!result.ok) return result;
+    // SHED_COMMITMENT is one pressure-response input even though it reuses the
+    // authored release transition internally.
+    state.betaV2.progress.meaningfulDecisions = Math.max(
+      0,
+      state.betaV2.progress.meaningfulDecisions - 1,
+    );
     state.containment[domain].pressure = Math.max(0, state.containment[domain].pressure - 12);
   } else if (action === "ACCEPT_PARTITION") {
     if (!FRESH_LOSS_DOMAINS.includes(domain)) return { ok: false, reason: "This domain has no authored Beta V2 loss pack." };
