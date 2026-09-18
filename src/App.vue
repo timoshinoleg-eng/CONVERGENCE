@@ -34,6 +34,7 @@ const moscowStage = computed<"candidate" | "schematic" | null>(() => {
 });
 
 const mediaLocale = computed(() => game.resolveMediaLocale());
+const postures = ["CONTINUITY", "THROUGHPUT", "AUTONOMOUS"] as const;
 
 onMounted(async () => {
   await platform.ready();
@@ -132,7 +133,7 @@ async function resetGame(): Promise<void> {
         </article>
         <article>
           <span>OVERSIGHT</span>
-          <strong>{{ game.game ? '' : '' }}{{ game.snapshot.betaV2.oversight.capacity - game.oversightFree }}/{{ game.snapshot.betaV2.oversight.capacity }}</strong>
+          <strong>{{ game.snapshot.betaV2.oversight.capacity - game.oversightFree }}/{{ game.snapshot.betaV2.oversight.capacity }}</strong>
           <small>{{ game.oversightFree }} FREE</small>
         </article>
         <article>
@@ -150,7 +151,7 @@ async function resetGame(): Promise<void> {
       </div>
       <div class="posture-actions">
         <button
-          v-for="posture in ['CONTINUITY', 'THROUGHPUT', 'AUTONOMOUS'] as const"
+          v-for="posture in postures"
           :key="posture"
           :disabled="game.snapshot.betaV2.posture.current === posture || !!game.snapshot.betaV2.posture.pending"
           @click="game.transitionPosture(posture)"
