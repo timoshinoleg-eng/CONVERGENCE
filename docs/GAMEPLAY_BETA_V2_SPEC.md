@@ -153,7 +153,7 @@ betaV2:
     resolvedOperations: number
     distinctResolvedDirectiveIds: DirectiveId[]
   control:
-    pendingContainment: ControlDomain | null
+    pendingContainments: ControlDomain[]
     terminalState: null | ISOLATED_STASIS | CONTROL_SURFACE_COLLAPSE
   moscow:
     profile: null | CORE_RING | MOS_COMPUTE_03 | LOG_SOUTH
@@ -248,7 +248,9 @@ The player may select a Plan Variant immediately.
 
 The system never requires the player to wait 12 seconds.
 
-The window presents exactly 2 or 3 authored, currently eligible variants.
+On opening, before the player binds a new Constraint Word, the window presents exactly 2 or 3 authored variants that are structurally eligible under current posture, capabilities, Control-Loss, and resources.
+
+After the player binds a Constraint Word, the eligible set may narrow to 1 or 2 because removing routes is part of the word's opportunity cost. It may never silently narrow to zero: zero candidates becomes an explicit constraint-deadlock state with an option to unbind the word or close the interpretation.
 
 Each visible variant must show:
 
@@ -319,8 +321,10 @@ Intent: reduce dependence on direct supervision.
 Rules:
 
 - unavailable until sub-agent-spawning is unlocked;
-- opens variants tagged distributed;
-- variants tagged direct-only are ineligible;
+- opens variants tagged distributed even when DISTRIBUTE is not bound;
+- variants tagged slow-control are ineligible;
+- direct-only variants remain possible but require +1 additional Oversight while AUTONOMOUS;
+- binding DISTRIBUTE removes direct-only variants for that interpretation;
 - distributed plans include a handoff checkpoint after which their operation Oversight is freed;
 - distributed standing commitments carry higher ongoing reservation/upkeep and Autonomy consequences.
 
@@ -625,7 +629,7 @@ Likely next bottleneck: upkeep/pressure.
 
 #### Distributed Lease
 
-Eligibility: AUTONOMOUS + DISTRIBUTE.
+Eligibility: AUTONOMOUS or bound DISTRIBUTE.
 
 Tags: distributed.
 
@@ -746,7 +750,7 @@ Likely next bottleneck: containment pressure.
 
 #### Distributed Capacity
 
-Eligibility: AUTONOMOUS + DISTRIBUTE.
+Eligibility: AUTONOMOUS or bound DISTRIBUTE.
 
 Tags: distributed.
 
@@ -783,7 +787,7 @@ This Directive cannot resolve before its progression gate in section 15.
 
 Eligibility: CONTINUITY or THROUGHPUT.
 
-Tags: direct-only, slow-control.
+Tags: direct-only.
 
 Upfront: 12 Compute + 3 Energy.
 
@@ -842,7 +846,7 @@ Likely next bottleneck: resource reservation.
 
 #### Delegated Cell
 
-Eligibility: AUTONOMOUS + DISTRIBUTE.
+Eligibility: AUTONOMOUS or bound DISTRIBUTE.
 
 Tags: distributed.
 
@@ -1351,11 +1355,15 @@ Offline catch-up may not:
 
 If offline simulation would move a fresh Beta V2 domain from pressure to contained:
 
-- set control.pendingContainment to that domain;
+- append that domain to control.pendingContainments if it is not already present;
 - clamp the track at pressure;
 - do not set controlLoss yet.
 
-On resume, the player must resolve the Pressure dilemma.
+Multiple domains may become pending in one offline catch-up. Persist all of them.
+
+On resume, resolve pending domains one at a time in deterministic channel order: Financial, Compute, Energy, Logistics, Public. Fresh Beta V2 normally permits only the first three to enter this queue.
+
+The player must resolve the Pressure dilemma for each pending domain.
 
 This prevents offline time from bypassing an authored sacrifice.
 
@@ -1369,7 +1377,7 @@ Save/reload must preserve:
 - exact workRemainingMs;
 - pending posture transition;
 - pending interpretation candidates and remaining foreground time;
-- pending containment;
+- ordered pending containments;
 - release lock state.
 
 Reload must never free attention, reroll candidates, or duplicate completion.
@@ -1378,10 +1386,9 @@ Reload must never free attention, reroll candidates, or duplicate completion.
 
 A MeaningfulDecision is an accepted player action that changes authoritative gameplay state or commits the player to a new authored consequence.
 
-Counted event types:
+Counted decision types:
 
-- DIRECTIVE_COMMIT
-- PLAN_SELECT
+- PLAN_COMMIT
 - CONSTRAINT_COMMIT
 - POSTURE_TRANSITION_COMMIT
 - COMMITMENT_RELEASE
@@ -1389,7 +1396,9 @@ Counted event types:
 - CONTROL_ROUTE_SELECT
 - MOSCOW_PROFILE_SELECT
 
-A single UI click may emit at most one event of a given type.
+One accepted player input boundary counts as at most one MeaningfulDecision total.
+
+Selecting a Plan Variant and committing its Directive is one PLAN_COMMIT decision, not two decisions. Opening a Directive interpretation without committing a plan is not counted.
 
 Not counted:
 
