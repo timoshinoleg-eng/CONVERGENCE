@@ -351,7 +351,7 @@ function postureAllowsPlan(state: GameState, plan: PlanDefinition, word: Constra
 
   // Section 8.3 says direct-only variants remain possible in AUTONOMOUS with
   // +1 Oversight. This fallback keeps that rule authoritative where shorthand
-  // per-plan posture lists would otherwise leave a one-candidate window.
+  // per-plan posture lists would otherwise leave only one candidate.
   if (posture === "AUTONOMOUS" && hasTag(plan, "direct-only") && !hasTag(plan, "slow-control")) return true;
 
   // Once DISTRIBUTE language is unlocked, one authored distributed alternative
