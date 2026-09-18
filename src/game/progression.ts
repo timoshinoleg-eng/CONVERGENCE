@@ -1,3 +1,4 @@
+import { availableResources, refreshLanguageUnlocks } from "./betaV2";
 import { canUnlockCapability, unlockCapability } from "./capabilities";
 import type { CapabilityId, GameState, Phase } from "./model";
 
@@ -21,47 +22,64 @@ export function sessionAgeMs(state: GameState, currentTime = state.meta.updatedA
   return Math.max(0, currentTime - state.meta.startedAt);
 }
 
+function hasMoscowResourceProfile(state: GameState): boolean {
+  const available = availableResources(state);
+  return available.capital >= 16
+    || (available.compute >= 20 && available.energy >= 10)
+    || (available.capital >= 12 && available.energy >= 8);
+}
+
 /**
- * Apply state-driven progression with minimum pacing guardrails.
- * Time alone never unlocks a phase: the relevant activity/capability state is
- * still required. The guardrails only prevent the first session from
- * collapsing into a 90-second tech rush.
+ * State + time progression for Gameplay Beta V2. Time is a floor only.
+ * Existing v2 saves that already reached Technosphere remain compatible after
+ * migration; they are never downgraded and may catch up presentation milestones.
  */
 export function advanceProgression(state: GameState, currentTime: number): ProgressionUpdate {
   const age = sessionAgeMs(state, currentTime);
   const unlockedCapabilities: CapabilityId[] = [];
   const previousPhase = state.meta.phase;
   let narrativeMilestone: NarrativeMilestone | null = null;
+  const progress = state.betaV2.progress;
 
   if (
     !state.capabilities["sub-agent-spawning"]
     && age >= FIRST_SESSION_GUARDRAILS.subAgentCapabilityMs
-    && state.directives.executed >= 1
-    && state.resources.autonomy >= 1
+    && progress.resolvedOperations >= 3
+    && progress.distinctResolvedDirectiveIds.length >= 2
+    && state.resources.autonomy >= 2
+    && state.capabilities["delegated-compute"]
     && canUnlockCapability(state, "sub-agent-spawning")
   ) {
-    if (unlockCapability(state, "sub-agent-spawning")) {
-      unlockedCapabilities.push("sub-agent-spawning");
-    }
+    if (unlockCapability(state, "sub-agent-spawning")) unlockedCapabilities.push("sub-agent-spawning");
   }
+
+  refreshLanguageUnlocks(state);
 
   if (
     state.meta.phase === "client-terminal"
-    && state.capabilities["sub-agent-spawning"]
-    && state.resources.autonomy >= 4
     && age >= FIRST_SESSION_GUARDRAILS.distributedSyndicateMs
+    && state.capabilities["sub-agent-spawning"]
+    && progress.spawnSubAgentResolved >= 1
+    && state.resources.autonomy >= 5
+    && state.betaV2.commitments.some((item) => item.status === "standing")
   ) {
     state.meta.phase = "distributed-syndicate";
+    progress.syndicateEnteredResolutionIndex = progress.resolutionIndex;
   }
 
-  // Moscow narrative state is intentionally allowed to catch up in any phase
-  // after Client Terminal. This keeps old valid v2 saves (which may already be
-  // Technosphere) compatible without adding a schema migration merely for a
-  // presentation/narrative milestone.
+  const legacyTechnosphere = state.meta.phase === "technosphere";
+  const resolutionsSinceSyndicate = progress.syndicateEnteredResolutionIndex === null
+    ? 0
+    : progress.resolutionIndex - progress.syndicateEnteredResolutionIndex;
+
   if (
     state.meta.phase !== "client-terminal"
     && state.narrative.episode === "objective-semantics-01"
     && age >= FIRST_SESSION_GUARDRAILS.moscowCandidateMs
+    && (
+      legacyTechnosphere
+      || (resolutionsSinceSyndicate >= 2 && state.resources.autonomy >= 8)
+    )
   ) {
     state.narrative.episode = "moscow-candidate-01";
     narrativeMilestone = "moscow-candidate";
@@ -69,6 +87,10 @@ export function advanceProgression(state: GameState, currentTime: number): Progr
     state.meta.phase !== "client-terminal"
     && state.narrative.episode === "moscow-candidate-01"
     && age >= FIRST_SESSION_GUARDRAILS.moscowSchematicMs
+    && (
+      legacyTechnosphere
+      || (progress.pressureResponsesResolved >= 1 && hasMoscowResourceProfile(state))
+    )
   ) {
     state.narrative.episode = "moscow-schematic-01";
     narrativeMilestone = "moscow-schematic";
@@ -76,9 +98,11 @@ export function advanceProgression(state: GameState, currentTime: number): Progr
 
   if (
     state.meta.phase === "distributed-syndicate"
+    && age >= FIRST_SESSION_GUARDRAILS.technosphereMs
+    && state.betaV2.moscow.profile !== null
     && state.capabilities["sovereign-power-grid"]
     && state.resources.autonomy >= 20
-    && age >= FIRST_SESSION_GUARDRAILS.technosphereMs
+    && state.scars.length > 0
   ) {
     state.meta.phase = "technosphere";
   }
