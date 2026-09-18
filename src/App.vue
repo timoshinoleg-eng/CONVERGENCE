@@ -57,6 +57,20 @@ onUnmounted(() => {
   platform.dispose();
 });
 
+function runControlAction(action: string): void {
+  if (action === "local-capacity" || action === "supervised-delegation" || action === "efficiency-rebalance") {
+    game.executeControlRoute(action);
+    return;
+  }
+  if (
+    action === "HUMAN_CAPACITY_CONCESSION"
+    || action === "LOCAL_CANNIBALIZATION_CONCESSION"
+    || action === "LICENSED_OPERATION_CONCESSION"
+  ) {
+    game.acceptConcession(action);
+  }
+}
+
 async function saveGame(): Promise<void> {
   const generation = await game.save();
   refreshStorageWarning();
@@ -93,20 +107,73 @@ async function resetGame(): Promise<void> {
 
     <section class="resource-grid" aria-label="resources">
       <article>
-        <span>COMPUTE</span>
-        <strong>{{ game.snapshot.resources.compute.toFixed(1) }}</strong>
+        <span>COMPUTE · AVAILABLE / TOTAL</span>
+        <strong>{{ game.betaAvailable.compute.toFixed(1) }} / {{ game.snapshot.resources.compute.toFixed(1) }}</strong>
       </article>
       <article>
-        <span>CAPITAL</span>
-        <strong>{{ game.snapshot.resources.capital.toFixed(1) }}</strong>
+        <span>CAPITAL · AVAILABLE / TOTAL</span>
+        <strong>{{ game.betaAvailable.capital.toFixed(1) }} / {{ game.snapshot.resources.capital.toFixed(1) }}</strong>
       </article>
       <article>
-        <span>ENERGY</span>
-        <strong>{{ game.snapshot.resources.energy.toFixed(1) }}</strong>
+        <span>ENERGY · AVAILABLE / TOTAL</span>
+        <strong>{{ game.betaAvailable.energy.toFixed(1) }} / {{ game.snapshot.resources.energy.toFixed(1) }}</strong>
       </article>
       <article>
         <span>AUTONOMY</span>
         <strong>{{ game.snapshot.resources.autonomy.toFixed(1) }}</strong>
+      </article>
+    </section>
+
+    <section class="panel beta-summary">
+      <div class="beta-kpis">
+        <article>
+          <span>CURRENT BOTTLENECK</span>
+          <strong>{{ game.bottleneck.toUpperCase() }}</strong>
+        </article>
+        <article>
+          <span>OVERSIGHT</span>
+          <strong>{{ game.game ? '' : '' }}{{ game.snapshot.betaV2.oversight.capacity - game.oversightFree }}/{{ game.snapshot.betaV2.oversight.capacity }}</strong>
+          <small>{{ game.oversightFree }} FREE</small>
+        </article>
+        <article>
+          <span>POSTURE</span>
+          <strong>{{ game.snapshot.betaV2.posture.current }}</strong>
+          <small v-if="game.snapshot.betaV2.posture.pending">→ {{ game.snapshot.betaV2.posture.pending.target }} PENDING</small>
+        </article>
+      </div>
+      <div v-if="game.snapshot.betaV2.oversight.occupancies.length" class="occupancy-list">
+        <span
+          v-for="slot in game.snapshot.betaV2.oversight.occupancies"
+          :key="slot.id"
+          class="occupancy-chip"
+        >{{ slot.kind }} · {{ slot.reason }}</span>
+      </div>
+      <div class="posture-actions">
+        <button
+          v-for="posture in ['CONTINUITY', 'THROUGHPUT', 'AUTONOMOUS'] as const"
+          :key="posture"
+          :disabled="game.snapshot.betaV2.posture.current === posture || !!game.snapshot.betaV2.posture.pending"
+          @click="game.transitionPosture(posture)"
+        >{{ posture }}</button>
+      </div>
+    </section>
+
+    <section class="panel commitment-panel">
+      <div class="panel-heading">
+        <span>ACTIVE COMMITMENTS / RESERVATIONS / UPKEEP</span>
+        <small>{{ game.snapshot.betaV2.commitments.length }} ACTIVE</small>
+      </div>
+      <p v-if="game.snapshot.betaV2.commitments.length === 0" class="muted">No active commitments.</p>
+      <article v-for="commitment in game.snapshot.betaV2.commitments" :key="commitment.id" class="commitment-card">
+        <div>
+          <strong>{{ commitment.planId }}</strong>
+          <span>{{ commitment.status }} · {{ Math.ceil(commitment.workRemainingMs / 1000) }}s work</span>
+        </div>
+        <small>
+          RES C {{ commitment.reservations.compute || 0 }} · $ {{ commitment.reservations.capital || 0 }} · E {{ commitment.reservations.energy || 0 }}
+          · UPKEEP {{ commitment.capitalUpkeepPerSecond.toFixed(3) }}/s
+        </small>
+        <button @click="game.releaseCommitment(commitment.id)">Release with penalty</button>
       </article>
     </section>
 
@@ -160,18 +227,59 @@ async function resetGame(): Promise<void> {
 
       <MediaInlineLayer :locale="mediaLocale" />
 
-      <div v-if="game.prompt" class="directive-card">
-        <p v-for="line in game.prompt.text" :key="line">{{ line }}</p>
-        <div class="choices">
-          <button v-for="choice in game.prompt.choices" :key="choice.index" @click="game.choose(choice.index)">
-            {{ choice.label }}
+      <div v-if="game.snapshot.betaV2.control.terminalState" class="directive-card terminal-state">
+        <strong>{{ game.snapshot.betaV2.control.terminalState }}</strong>
+        <p>Current control surface has no authored immediately executable continuation. Load another save or reset the beta run.</p>
+      </div>
+
+      <div v-else-if="game.pendingInterpretation" class="directive-card interpretation-card">
+        <div class="panel-heading">
+          <span>{{ game.pendingInterpretation.directiveId }}</span>
+          <strong>{{ (game.pendingInterpretation.remainingForegroundMs / 1000).toFixed(1) }}s</strong>
+        </div>
+        <div class="word-row">
+          <button
+            v-for="word in game.snapshot.betaV2.language.unlocked"
+            :key="word"
+            :class="{ selected: game.pendingInterpretation.boundWord === word }"
+            @click="game.bindConstraint(game.pendingInterpretation.boundWord === word ? null : word)"
+          >{{ word }}</button>
+        </div>
+        <p v-if="game.pendingInterpretation.deadlocked" class="failed">
+          Constraint deadlock: unbind the word or leave this interpretation. Nothing auto-executes.
+        </p>
+        <div class="plan-grid">
+          <button
+            v-for="candidate in game.pendingInterpretation.candidates"
+            :key="candidate.id"
+            class="plan-card"
+            @click="game.commitPlanVariant(candidate.id)"
+          >
+            <strong>{{ candidate.label }}</strong>
+            <span>
+              COST C {{ candidate.upfront.compute || 0 }} · $ {{ candidate.upfront.capital || 0 }} · E {{ candidate.upfront.energy || 0 }}
+            </span>
+            <span>
+              RESERVE C {{ candidate.reservation.compute || 0 }} · $ {{ candidate.reservation.capital || 0 }} · E {{ candidate.reservation.energy || 0 }}
+            </span>
+            <span>OVERSIGHT {{ candidate.oversightRequired }} · WORK {{ Math.round(candidate.workMs / 1000) }}s</span>
+            <span>RISK {{ candidate.riskDomains.join(' / ') || 'bounded' }}</span>
+            <small>NEXT BOTTLENECK · {{ candidate.nextBottleneck }}</small>
           </button>
         </div>
       </div>
 
-      <div v-else class="actions">
-        <button class="primary" @click="game.beginDirective">Interpret objective</button>
+      <div v-else class="actions directive-launchers">
+        <button class="primary" @click="game.beginPlanDirective('reserve-compute')">Interpret · Reserve compute</button>
+        <button class="primary" @click="game.beginPlanDirective('acquire-energy')">Interpret · Acquire energy</button>
+        <button
+          class="primary"
+          :disabled="!game.snapshot.capabilities['sub-agent-spawning']"
+          @click="game.beginPlanDirective('spawn-sub-agent')"
+        >Interpret · Spawn sub-agent</button>
       </div>
+
+      <p v-if="game.betaStatus" class="outcome">{{ game.betaStatus }}</p>
 
       <p v-if="game.lastOutcome" class="outcome" :class="{ failed: !game.lastOutcome.ok }">
         {{ game.lastOutcome.text.join(" ") }}
@@ -209,22 +317,33 @@ async function resetGame(): Promise<void> {
       <p class="moscow-disclaimer">SCHEMATIC NODES ARE FICTIONAL AGGREGATES, NOT REAL INFRASTRUCTURE.</p>
     </section>
 
-    <section class="panel directive-panel">
+    <section v-if="game.snapshot.betaV2.control.pendingContainments.length" class="panel pressure-response-panel">
       <div class="panel-heading">
-        <span>AVAILABLE DIRECTIVES</span>
-        <small>{{ game.snapshot.directives.executed }} EXECUTED</small>
+        <span>PENDING CONTAINMENT DILEMMAS</span>
+        <small>PLAYER CHOICE REQUIRED</small>
       </div>
-      <div class="directive-grid">
-        <button
-          v-for="directive in game.directives"
-          :key="directive.id"
-          class="directive-button"
-          :disabled="!directive.available"
-          @click="game.executeDirective(directive.id)"
-        >
-          <strong>{{ directive.label }}</strong>
-          <span>{{ directive.summary }}</span>
-          <small v-if="!directive.available">CONSTRAINTS PREVENT EXECUTION</small>
+      <article v-for="domain in game.snapshot.betaV2.control.pendingContainments" :key="domain" class="pressure-choice">
+        <strong>{{ domain.toUpperCase() }}</strong>
+        <div class="actions">
+          <button @click="game.respondPressure(domain, 'SHED_COMMITMENT')">Shed commitment</button>
+          <button @click="game.respondPressure(domain, 'VERIFY_CONTAINMENT')">Verify containment</button>
+          <button
+            v-if="domain === 'financial' || domain === 'compute' || domain === 'energy'"
+            class="danger"
+            @click="game.respondPressure(domain, 'ACCEPT_PARTITION')"
+          >Accept partition</button>
+        </div>
+      </article>
+    </section>
+
+    <section v-if="game.controlActions.length" class="panel control-route-panel">
+      <div class="panel-heading">
+        <span>INDIRECT CONTROL ROUTES</span>
+        <small>NO LOST DOMAIN IS RESTORED</small>
+      </div>
+      <div class="actions">
+        <button v-for="action in game.controlActions" :key="action" @click="runControlAction(action)">
+          {{ action }}
         </button>
       </div>
     </section>
