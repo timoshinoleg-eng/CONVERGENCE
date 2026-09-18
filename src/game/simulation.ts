@@ -31,7 +31,11 @@ export function advanceSimulation(
   state: GameState,
   input: { currentTime: number; deltaMs: number },
 ): SimulationReport {
-  const deltaSeconds = Math.min(Math.max(input.deltaMs, 0), 60_000) / 1000;
+  // B-04: clamp the simulated step, but only consume the step we actually took.
+  const rawDeltaMs = Math.max(0, input.deltaMs);
+  const simulatedMs = Math.min(rawDeltaMs, 60_000);
+  const unsimulatedMs = rawDeltaMs - simulatedMs;
+  const deltaSeconds = simulatedMs / 1000;
   const delegationBonus = state.capabilities["sub-agent-spawning"] ? 1.35 : 1;
   const autonomyBonus = 1 + state.resources.autonomy * 0.025;
   const incidents: IncidentOutcome[] = [];
@@ -39,7 +43,7 @@ export function advanceSimulation(
   state.resources.compute += deltaSeconds * delegationBonus * autonomyBonus;
   state.resources.capital += deltaSeconds * 0.12 * delegationBonus * (1 + state.resources.autonomy * 0.01);
   state.meta.tick += 1;
-  state.meta.updatedAt = input.currentTime;
+  state.meta.updatedAt = input.currentTime - unsimulatedMs;
 
   const rng = createTickRng(state);
   for (const channel of ANOMALY_CHANNELS) {
@@ -59,3 +63,4 @@ export function advanceSimulation(
   const progression = advanceProgression(state, input.currentTime);
   return { elapsedSeconds: deltaSeconds, incidents, progression };
 }
+
