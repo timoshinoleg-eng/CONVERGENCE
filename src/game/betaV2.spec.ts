@@ -5,6 +5,8 @@ import {
   availableControlActions,
   availableResources,
   bindConstraintWord,
+  closeInterpretation,
+  commitControlRoute,
   commitPlan,
   eligiblePlans,
   executeConcession,
@@ -401,4 +403,72 @@ describe("Gameplay Beta V2 acceptance invariants", () => {
     expect(spawn.length).toBeGreaterThanOrEqual(2);
     expect(spawn.length).toBeLessThanOrEqual(3);
   });
+
+  it("close/reopen preserves the exact unresolved interpretation and pauses foreground time while closed", () => {
+    const state = richState();
+    const opened = openInterpretation(state, "reserve-compute");
+    expect(opened).not.toBeNull();
+    advanceBetaV2(state, 4_000, true);
+    const fingerprint = JSON.stringify(state.betaV2.interpretation?.candidates);
+    const remaining = state.betaV2.interpretation!.remainingForegroundMs;
+
+    expect(closeInterpretation(state).ok).toBe(true);
+    expect(state.betaV2.interpretation?.isOpen).toBe(false);
+    advanceBetaV2(state, 30_000, true);
+    expect(state.betaV2.interpretation?.remainingForegroundMs).toBe(remaining);
+
+    const reopened = openInterpretation(state, "reserve-compute");
+    expect(reopened?.isOpen).toBe(true);
+    expect(reopened?.remainingForegroundMs).toBe(remaining);
+    expect(JSON.stringify(reopened?.candidates)).toBe(fingerprint);
+  });
+
+  it("frozen plan presentation is revalidated against Control-Loss before commit", () => {
+    const state = richState();
+    const pending = openInterpretation(state, "reserve-compute");
+    expect(pending).not.toBeNull();
+    const frozenPlan = pending!.candidates[0]!.id;
+
+    applyBetaControlLoss(state, "financial");
+
+    expect(state.betaV2.interpretation?.candidates.some((candidate) => candidate.id === frozenPlan)).toBe(true);
+    expect(commitPlan(state, frozenPlan).ok).toBe(false);
+    expect(state.betaV2.commitments.some((item) => item.planId === frozenPlan)).toBe(false);
+  });
+
+  it("efficiency-rebalance persists an inferred target and actually frees its Energy reservation", () => {
+    const state = richState();
+    const target = standingEnergy("rebalance-target");
+    state.betaV2.commitments.push(target);
+    applyBetaControlLoss(state, "energy");
+
+    const started = commitControlRoute(state, "efficiency-rebalance");
+    expect(started.ok).toBe(true);
+    const operation = state.betaV2.commitments.find((item) => item.id === started.operationId)!;
+    expect(operation.controlTargetCommitmentId).toBe(target.id);
+
+    advanceBetaV2(state, 30_000, true);
+
+    const adapted = state.betaV2.commitments.find((item) => item.id === target.id)!;
+    expect(adapted.reservations.energy).toBe(2);
+    expect(adapted.capacityFactor).toBe(0.75);
+  });
+
+  it("completed single-domain indirect adaptation is not terminalized for failing to repay the same route twice", () => {
+    const state = richState();
+    state.resources.capital = 18;
+    state.resources.energy = 6;
+    applyBetaControlLoss(state, "compute");
+
+    const started = commitControlRoute(state, "supervised-delegation");
+    expect(started.ok).toBe(true);
+    expect(state.resources.capital).toBe(0);
+    expect(state.resources.energy).toBe(0);
+
+    advanceBetaV2(state, 40_000, true);
+
+    expect(state.controlLoss.compute).toBe(true);
+    expect(state.betaV2.control.terminalState).toBeNull();
+  });
+
 });
