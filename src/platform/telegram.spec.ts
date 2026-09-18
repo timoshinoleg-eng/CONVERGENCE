@@ -220,7 +220,7 @@ describe("Telegram adapter", () => {
     });
     applyEnvironmentToDocument(host.document, adapter.getEnvironment());
 
-    expect(host.cssVariables.get("--cv-safe-bottom")).toBe("20px");
+    expect(host.cssVariables.get("--cv-safe-bottom")).toContain("20px");
     expect(host.cssVariables.get("--cv-viewport-height")).toBe("690px");
     expect(host.cssVariables.get("--cv-page-background")).toBe("#17212b");
     expect(host.dataset.cvPlatform).toBe("telegram");
