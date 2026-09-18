@@ -25,8 +25,16 @@ export class Scheduler {
 
   private onInterval(): void {
     const now = Date.now();
-    const deltaMs = Math.max(0, now - this.lastTickTime);
-    this.lastTickTime = now;
-    this.advance({ currentTime: now, deltaMs });
+    if (now < this.lastTickTime) {
+      this.lastTickTime = now;
+      return;
+    }
+
+    const elapsedMs = now - this.lastTickTime;
+    const deltaMs = Math.min(elapsedMs, 60_000);
+    if (deltaMs <= 0) return;
+
+    this.lastTickTime += deltaMs;
+    this.advance({ currentTime: this.lastTickTime, deltaMs });
   }
 }

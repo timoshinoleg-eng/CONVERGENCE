@@ -34,10 +34,19 @@ export function applyEnvironmentToDocument(
   const style = hostDocument.documentElement.style;
   const px = (value: number): string => `${Math.max(0, Math.round(value))}px`;
 
-  style.setProperty(CSS_VARIABLES.safeTop, px(environment.safeArea.top));
-  style.setProperty(CSS_VARIABLES.safeRight, px(environment.safeArea.right));
-  style.setProperty(CSS_VARIABLES.safeBottom, px(environment.safeArea.bottom));
-  style.setProperty(CSS_VARIABLES.safeLeft, px(environment.safeArea.left));
+  // B-05: never clobber the stylesheet's `env()` default. The published value
+  // is the maximum of the adapter's measured inset and the CSS environment
+  // inset, so a zero-measurement adapter (browser / Capacitor) no longer erases
+  // `env(safe-area-inset-*)` on notched devices.
+  const inset = (value: number, side: "top" | "right" | "bottom" | "left"): string =>
+    value > 0
+      ? `max(${px(value)}, env(safe-area-inset-${side}, 0px))`
+      : `env(safe-area-inset-${side}, 0px)`;
+
+  style.setProperty(CSS_VARIABLES.safeTop, inset(environment.safeArea.top, "top"));
+  style.setProperty(CSS_VARIABLES.safeRight, inset(environment.safeArea.right, "right"));
+  style.setProperty(CSS_VARIABLES.safeBottom, inset(environment.safeArea.bottom, "bottom"));
+  style.setProperty(CSS_VARIABLES.safeLeft, inset(environment.safeArea.left, "left"));
   style.setProperty(CSS_VARIABLES.viewportHeight, px(environment.viewport.stableHeight));
   style.setProperty(CSS_VARIABLES.viewportHeightDynamic, px(environment.viewport.height));
   style.setProperty(
@@ -49,3 +58,4 @@ export function applyEnvironmentToDocument(
   dataset.cvPlatform = environment.platform;
   dataset.cvColorScheme = environment.theme.colorScheme;
 }
+

@@ -60,7 +60,7 @@ describe("current Telegram Mini App API integration", () => {
     (webApp.safeAreaInset as { bottom?: number }).bottom = 34;
     (webApp as unknown as { fire(eventType: string): void }).fire("safeAreaChanged");
 
-    expect(host.cssVariables.get("--cv-safe-bottom")).toBe("34px");
+    expect(host.cssVariables.get("--cv-safe-bottom")).toContain("34px");
   });
 
   it("selects Telegram DeviceStorage at the platform boundary", async () => {

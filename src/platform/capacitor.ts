@@ -79,27 +79,36 @@ export function createCapacitorAdapter(options: CapacitorAdapterOptions): Platfo
     createLifecycleController({
       readVisibility: () => visible,
       onVisibilityChange: (listener) => {
-        if (app) {
-          let handle: CapacitorListenerHandle | null = null;
-          void app
-            .addListener("appStateChange", ({ isActive }) => {
-              visible = isActive;
-              listener();
-            })
-            .then((next) => {
-              handle = next;
-            })
-            .catch(() => {
-              /* plugin unavailable; fall through to DOM visibility below */
-            });
-          return () => {
-            void handle?.remove().catch(() => undefined);
-          };
-        }
-        return bindHostEvent(hostDocument, "visibilitychange", () => {
+        // B-07: bind the DOM fallback FIRST and unconditionally. Previously the
+        // `app` branch returned before this was ever reached, so a rejected
+        // `addListener` left the app with no lifecycle source at all.
+        const domUnbind = bindHostEvent(hostDocument, "visibilitychange", () => {
           visible = hostDocument.visibilityState !== "hidden";
           listener();
         });
+        if (!app) return domUnbind;
+
+        let handle: CapacitorListenerHandle | null = null;
+        let disposed = false;
+        app
+          .addListener("appStateChange", ({ isActive }) => {
+            visible = isActive;
+            listener();
+          })
+          .then((next) => {
+            // Teardown may have already happened; release the late handle.
+            if (disposed) void next.remove().catch(() => undefined);
+            else handle = next;
+          })
+          .catch(() => {
+            /* plugin unavailable; the DOM fallback above is already bound */
+          });
+
+        return () => {
+          disposed = true;
+          domUnbind();
+          void handle?.remove().catch(() => undefined);
+        };
       },
       // Android delivers teardown through appStateChange / process death.
       // onUnmounted already flushes a save, so no extra native hook is wired.
@@ -169,3 +178,4 @@ export function createCapacitorAdapter(options: CapacitorAdapterOptions): Platfo
     },
   };
 }
+
