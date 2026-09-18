@@ -125,6 +125,16 @@ export const useGameStore = defineStore("game", () => {
       }));
   });
 
+  const legacyDirectives = computed(() => directives.value.filter(
+    (directive) => ![
+      "reserve-compute",
+      "acquire-energy",
+      "spawn-sub-agent",
+      "local-capacity",
+      "supervised-delegation",
+    ].includes(directive.id),
+  ));
+
   function configureMedia(): MediaTier {
     if (mediaConfigured) return media.tier;
     const platform = getPlatform();
@@ -267,6 +277,21 @@ export const useGameStore = defineStore("game", () => {
       : "DIRECTIVE BLOCKED BY CURRENT RESOURCES / OVERSIGHT / CONTROL";
   }
 
+  function closePlanInterpretation(): void {
+    const result = runtime.closePlanInterpretation();
+    betaStatus.value = result.ok ? "INTERPRETATION CLOSED · SNAPSHOT PRESERVED" : (result.reason ?? "CLOSE REJECTED");
+    if (result.ok) scheduleSave();
+  }
+
+  function reopenPlanInterpretation(): void {
+    const current = snapshot.value.betaV2.interpretation;
+    if (!current) {
+      betaStatus.value = "NO INTERPRETATION TO REOPEN";
+      return;
+    }
+    beginPlanDirective(current.directiveId as Extract<BetaDirectiveId, "reserve-compute" | "acquire-energy" | "spawn-sub-agent">);
+  }
+
   function bindConstraint(word: ConstraintWordId | null): void {
     const result = runtime.bindConstraint(word);
     betaStatus.value = result.ok ? (word ? `${word} BOUND` : "CONSTRAINT CLEARED") : (result.reason ?? "CONSTRAINT REJECTED");
@@ -384,6 +409,7 @@ export const useGameStore = defineStore("game", () => {
     controlActions,
     betaStatus,
     directives,
+    legacyDirectives,
     start,
     stop,
     pauseForBackground,
@@ -393,6 +419,8 @@ export const useGameStore = defineStore("game", () => {
     executeDirective,
     spawnSubAgent,
     beginPlanDirective,
+    closePlanInterpretation,
+    reopenPlanInterpretation,
     bindConstraint,
     commitPlanVariant,
     transitionPosture,
