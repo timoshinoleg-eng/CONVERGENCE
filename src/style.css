@@ -168,3 +168,97 @@ button.danger, .danger { border-color: #7b4540; color: #ff9c95; }
   .commitment-card { grid-template-columns: 1fr; }
   .commitment-card button { grid-column: 1; grid-row: auto; }
 }
+
+
+/* Player-facing Beta V2 progressive disclosure. */
+.resource-grid {
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+}
+.beta-kpis {
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+.terminal {
+  border-color: #24504b;
+  box-shadow: inset 0 1px rgba(255,255,255,.018), 0 0 28px rgba(35, 83, 79, .08);
+}
+.signal-panel {
+  background: linear-gradient(180deg, rgba(6, 17, 18, .92), rgba(5, 14, 15, .84));
+}
+.signal-state {
+  color: #92c9c0 !important;
+  letter-spacing: .08em;
+}
+.signal-pressure,
+.signal-control-loss {
+  color: #ff8b82 !important;
+}
+.signal-investigation,
+.signal-elevated {
+  color: #d4bb7b !important;
+}
+.signal-copy {
+  margin: 0;
+  color: #668b86;
+  font-size: 11px;
+  line-height: 1.55;
+}
+.telemetry-details {
+  margin-top: 4px;
+  border-top: 1px solid #173131;
+  padding-top: 9px;
+}
+.telemetry-details summary,
+.system-tools > summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  color: #709f99;
+  font-size: 10px;
+  letter-spacing: .08em;
+  cursor: pointer;
+  user-select: none;
+}
+.containment-grid {
+  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+}
+.system-tools {
+  margin-top: 10px;
+  border: 1px solid #142829;
+  background: rgba(4, 10, 11, .65);
+  padding: 0 12px;
+}
+.system-tools[open] {
+  padding-bottom: 12px;
+}
+.system-tools .persistence-panel {
+  margin-top: 0;
+}
+button {
+  touch-action: manipulation;
+}
+
+@media (max-width: 430px) {
+  .shell {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+  .resource-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .resource-grid span {
+    font-size: 9px;
+    letter-spacing: .06em;
+  }
+  .resource-grid strong {
+    font-size: 15px;
+  }
+  .panel {
+    padding: 12px;
+  }
+  .directive-launchers > button,
+  .posture-actions > button,
+  .pressure-choice .actions > button,
+  .control-route-panel .actions > button {
+    flex: 1 1 100%;
+  }
+}

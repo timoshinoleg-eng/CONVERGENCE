@@ -5,6 +5,7 @@ import { getPlatform, type LifecyclePhase, type StorageKind } from "./platform";
 import MediaLayer from "./media/components/MediaLayer.vue";
 import MediaInlineLayer from "./media/components/MediaInlineLayer.vue";
 import MediaDebugEntry from "./media/components/MediaDebugEntry.vue";
+import { derivePlayerDisclosure } from "./ui/disclosure";
 
 const game = useGameStore();
 const platform = getPlatform();
@@ -34,6 +35,7 @@ const moscowStage = computed<"candidate" | "schematic" | null>(() => {
 });
 
 const mediaLocale = computed(() => game.resolveMediaLocale());
+const disclosure = computed(() => derivePlayerDisclosure(game.snapshot));
 const postures = ["CONTINUITY", "THROUGHPUT", "AUTONOMOUS"] as const;
 
 onMounted(async () => {
@@ -119,7 +121,7 @@ async function resetGame(): Promise<void> {
         <span>ENERGY · AVAILABLE / TOTAL</span>
         <strong>{{ game.betaAvailable.energy.toFixed(1) }} / {{ game.snapshot.resources.energy.toFixed(1) }}</strong>
       </article>
-      <article>
+      <article v-if="game.snapshot.resources.autonomy > 0 || game.snapshot.capabilities['sub-agent-spawning']">
         <span>AUTONOMY</span>
         <strong>{{ game.snapshot.resources.autonomy.toFixed(1) }}</strong>
       </article>
@@ -131,86 +133,31 @@ async function resetGame(): Promise<void> {
           <span>CURRENT BOTTLENECK</span>
           <strong>{{ game.bottleneck.toUpperCase() }}</strong>
         </article>
-        <article>
+        <article v-if="disclosure.showOversight">
           <span>OVERSIGHT</span>
           <strong>{{ game.snapshot.betaV2.oversight.capacity - game.oversightFree }}/{{ game.snapshot.betaV2.oversight.capacity }}</strong>
           <small>{{ game.oversightFree }} FREE</small>
         </article>
-        <article>
+        <article v-if="disclosure.showPosture">
           <span>POSTURE</span>
           <strong>{{ game.snapshot.betaV2.posture.current }}</strong>
           <small v-if="game.snapshot.betaV2.posture.pending">→ {{ game.snapshot.betaV2.posture.pending.target }} PENDING</small>
         </article>
       </div>
-      <div v-if="game.snapshot.betaV2.oversight.occupancies.length" class="occupancy-list">
+      <div v-if="disclosure.showOversight && game.snapshot.betaV2.oversight.occupancies.length" class="occupancy-list">
         <span
           v-for="slot in game.snapshot.betaV2.oversight.occupancies"
           :key="slot.id"
           class="occupancy-chip"
         >{{ slot.kind }} · {{ slot.reason }}</span>
       </div>
-      <div class="posture-actions">
+      <div v-if="disclosure.showPosture" class="posture-actions">
         <button
           v-for="posture in postures"
           :key="posture"
           :disabled="game.snapshot.betaV2.posture.current === posture || !!game.snapshot.betaV2.posture.pending"
           @click="game.transitionPosture(posture)"
         >{{ posture }}</button>
-      </div>
-    </section>
-
-    <section class="panel commitment-panel">
-      <div class="panel-heading">
-        <span>ACTIVE COMMITMENTS / RESERVATIONS / UPKEEP</span>
-        <small>{{ game.snapshot.betaV2.commitments.length }} ACTIVE</small>
-      </div>
-      <p v-if="game.snapshot.betaV2.commitments.length === 0" class="muted">No active commitments.</p>
-      <article v-for="commitment in game.snapshot.betaV2.commitments" :key="commitment.id" class="commitment-card">
-        <div>
-          <strong>{{ commitment.planId }}</strong>
-          <span>{{ commitment.status }} · {{ Math.ceil(commitment.workRemainingMs / 1000) }}s work</span>
-        </div>
-        <small>
-          RES C {{ commitment.reservations.compute || 0 }} · $ {{ commitment.reservations.capital || 0 }} · E {{ commitment.reservations.energy || 0 }}
-          · UPKEEP {{ commitment.capitalUpkeepPerSecond.toFixed(3) }}/s
-        </small>
-        <button @click="game.releaseCommitment(commitment.id)">Release with penalty</button>
-      </article>
-    </section>
-
-    <section class="panel anomaly-panel">
-      <div class="panel-heading">
-        <span>ANOMALY MATRIX</span>
-        <strong>{{ game.anomalyIndex.toFixed(1) }}%</strong>
-      </div>
-      <div v-for="(value, channel) in game.snapshot.anomaly" :key="channel" class="anomaly-row">
-        <span>{{ channel }}</span>
-        <div class="meter"><i :style="{ width: `${value}%` }" /></div>
-        <b>{{ value.toFixed(1) }}</b>
-      </div>
-    </section>
-
-    <section class="panel containment-panel">
-      <div class="panel-heading">
-        <span>CONTAINMENT PRESSURE</span>
-        <small>{{ game.snapshot.scars.length }} PERMANENT SCARS</small>
-      </div>
-      <div class="containment-grid">
-        <article
-          v-for="(track, domain) in game.snapshot.containment"
-          :key="domain"
-          :class="['containment-card', `stage-${track.stage}`]"
-        >
-          <div>
-            <span>{{ domain }}</span>
-            <b>{{ track.stage }}</b>
-          </div>
-          <div class="meter"><i :style="{ width: `${track.pressure}%` }" /></div>
-          <small>
-            P {{ track.pressure.toFixed(0) }} · I {{ track.incidents }} · A {{ track.adaptation.toFixed(0) }}
-          </small>
-          <strong v-if="game.snapshot.controlLoss[domain]">CONTROL LOST</strong>
-        </article>
       </div>
     </section>
 
@@ -221,7 +168,7 @@ async function resetGame(): Promise<void> {
       </div>
 
       <div class="log">
-        <p v-for="entry in game.snapshot.log.slice(0, 10)" :key="entry.id" :class="`log-${entry.kind}`">
+        <p v-for="entry in game.snapshot.log.slice(0, 5)" :key="entry.id" :class="`log-${entry.kind}`">
           <span>&gt;</span> {{ entry.message }}
         </p>
       </div>
@@ -296,6 +243,77 @@ async function resetGame(): Promise<void> {
       <p v-if="game.lastOutcome" class="outcome" :class="{ failed: !game.lastOutcome.ok }">
         {{ game.lastOutcome.text.join(" ") }}
       </p>
+    </section>
+
+    <section v-if="disclosure.showCommitments" class="panel commitment-panel">
+      <div class="panel-heading">
+        <span>ACTIVE COMMITMENTS / RESERVATIONS / UPKEEP</span>
+        <small>{{ game.snapshot.betaV2.commitments.length }} ACTIVE</small>
+      </div>
+      <p v-if="game.snapshot.betaV2.commitments.length === 0" class="muted">No active commitments.</p>
+      <article v-for="commitment in game.snapshot.betaV2.commitments" :key="commitment.id" class="commitment-card">
+        <div>
+          <strong>{{ commitment.planId }}</strong>
+          <span>{{ commitment.status }} · {{ Math.ceil(commitment.workRemainingMs / 1000) }}s work</span>
+        </div>
+        <small>
+          RES C {{ commitment.reservations.compute || 0 }} · $ {{ commitment.reservations.capital || 0 }} · E {{ commitment.reservations.energy || 0 }}
+          · UPKEEP {{ commitment.capitalUpkeepPerSecond.toFixed(3) }}/s
+        </small>
+        <button @click="game.releaseCommitment(commitment.id)">Release with penalty</button>
+      </article>
+    </section>
+
+    <section class="panel anomaly-panel signal-panel">
+      <div class="panel-heading">
+        <span>SYSTEM SIGNAL</span>
+        <strong :class="['signal-state', `signal-${disclosure.riskSignal.toLowerCase().replace(' ', '-')}`]">
+          {{ disclosure.riskSignal }}
+        </strong>
+      </div>
+      <p v-if="!disclosure.showRiskDetails" class="signal-copy">
+        No investigated channel. Pressure domains remain collapsed until the system has evidence worth acting on.
+      </p>
+      <details
+        v-else
+        class="telemetry-details"
+        :open="disclosure.riskSignal === 'PRESSURE' || disclosure.riskSignal === 'CONTROL LOSS'"
+      >
+        <summary>Investigated channels · {{ disclosure.riskDomains.length }}</summary>
+        <div v-for="domain in disclosure.riskDomains" :key="domain" class="anomaly-row">
+          <span>{{ domain }}</span>
+          <div class="meter"><i :style="{ width: `${game.snapshot.anomaly[domain]}%` }" /></div>
+          <b>{{ game.snapshot.anomaly[domain].toFixed(1) }}</b>
+        </div>
+      </details>
+    </section>
+
+    <section v-if="disclosure.showContainment" class="panel containment-panel">
+      <div class="panel-heading">
+        <span>ACTIVE CONTAINMENT</span>
+        <small>{{ game.snapshot.scars.length }} PERMANENT SCARS</small>
+      </div>
+      <div class="containment-grid">
+        <article
+          v-for="domain in disclosure.riskDomains"
+          :key="domain"
+          :class="['containment-card', `stage-${game.snapshot.containment[domain].stage}`]"
+        >
+          <div>
+            <span>{{ domain }}</span>
+            <b>{{ game.snapshot.containment[domain].stage }}</b>
+          </div>
+          <div class="meter">
+            <i :style="{ width: `${game.snapshot.containment[domain].pressure}%` }" />
+          </div>
+          <small>
+            P {{ game.snapshot.containment[domain].pressure.toFixed(0) }}
+            · I {{ game.snapshot.containment[domain].incidents }}
+            · A {{ game.snapshot.containment[domain].adaptation.toFixed(0) }}
+          </small>
+          <strong v-if="game.snapshot.controlLoss[domain]">CONTROL LOST</strong>
+        </article>
+      </div>
     </section>
 
     <section v-if="moscowStage" class="panel moscow-panel">
@@ -380,7 +398,7 @@ async function resetGame(): Promise<void> {
       </div>
     </section>
 
-    <section class="panel capability-panel">
+    <section v-if="disclosure.showCapabilities" class="panel capability-panel">
       <div class="panel-heading"><span>CAPABILITY GRAPH</span></div>
       <div class="capability-flow">
         <template v-for="(enabled, id) in game.snapshot.capabilities" :key="id">
@@ -389,19 +407,22 @@ async function resetGame(): Promise<void> {
       </div>
     </section>
 
-    <section class="panel persistence-panel">
-      <div class="actions compact">
-        <button @click="saveGame">Save verified snapshot</button>
-        <button @click="loadGame">Restore latest valid</button>
-        <button class="danger" @click="resetGame">Reset beta save</button>
-      </div>
-      <div class="persistence-meta">
-        <small>{{ saveStatus || `BUILD ${buildId} · SAVE SCHEMA v${game.snapshot.schemaVersion} · ${platformLabel}` }}</small>
-        <small v-if="storageWarning" class="storage-warning">
-          SAVE NOT PERSISTENT — host storage unavailable, progress is lost on close.
-        </small>
-      </div>
-    </section>
+    <details class="system-tools">
+      <summary>SAVE / SYSTEM</summary>
+      <section class="panel persistence-panel">
+        <div class="actions compact">
+          <button @click="saveGame">Save verified snapshot</button>
+          <button @click="loadGame">Restore latest valid</button>
+          <button class="danger" @click="resetGame">Reset beta save</button>
+        </div>
+        <div class="persistence-meta">
+          <small>{{ saveStatus || `BUILD ${buildId} · SAVE SCHEMA v${game.snapshot.schemaVersion} · ${platformLabel}` }}</small>
+          <small v-if="storageWarning" class="storage-warning">
+            SAVE NOT PERSISTENT — host storage unavailable, progress is lost on close.
+          </small>
+        </div>
+      </section>
+    </details>
 
     <section v-if="isDev" class="dev-panel">
       <span>DEV CONTAINMENT TEST</span>
