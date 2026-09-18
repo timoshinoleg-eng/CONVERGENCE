@@ -128,7 +128,7 @@ export interface BetaV2State {
   progress: {
     resolutionIndex: number;
     resolvedOperations: number;
-    distinctResolvedDirectiveIds: BetaDirectiveId[];
+    distinctResolvedDirectiveIds: string[];
     spawnSubAgentResolved: number;
     syndicateEnteredResolutionIndex: number | null;
     pressureResponsesResolved: number;
