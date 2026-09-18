@@ -74,7 +74,9 @@ export interface PendingInterpretation {
   candidates: PlanCandidateSnapshot[];
   remainingForegroundMs: number;
   frozen: boolean;
+  isOpen: boolean;
   boundWord: ConstraintWordId | null;
+  constraintDecisionCounted: boolean;
   openedAtResolutionIndex: number;
   deadlocked: boolean;
 }
