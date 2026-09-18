@@ -192,11 +192,34 @@ export async function loadSnapshot(store: KeyValueStore): Promise<GameState | nu
   const [rawA, rawB] = await Promise.all([store.get(SLOT_A), store.get(SLOT_B)]);
   const candidates = [safeDeserialize(rawA), safeDeserialize(rawB)]
     .filter((value): value is SaveEnvelope => value !== null)
-    .sort((left, right) => right.generation - left.generation);
+    // E-2: `savedAt` breaks generation ties deterministically; without it two
+    // slots holding the same generation resolve by slot order, not write order.
+    .sort((left, right) => right.generation - left.generation || right.savedAt - left.savedAt);
   return candidates[0]?.data ?? null;
 }
 
+/**
+ * E-2: per-store write queue. `saveSnapshot` reads A/B/active and then writes,
+ * so two overlapping saves would otherwise compute the same generation and let
+ * the older snapshot win. Serialising here protects every caller.
+ */
+const saveQueues = new WeakMap<KeyValueStore, Promise<unknown>>();
+
 export async function saveSnapshot(store: KeyValueStore, state: GameState): Promise<number> {
+  const requestedState = structuredClone(state);
+  const previous = saveQueues.get(store) ?? Promise.resolve();
+  const run = previous.then(() => writeSnapshot(store, requestedState));
+  saveQueues.set(
+    store,
+    run.then(
+      () => undefined,
+      () => undefined,
+    ),
+  );
+  return run;
+}
+
+async function writeSnapshot(store: KeyValueStore, state: GameState): Promise<number> {
   const [rawA, rawB, active] = await Promise.all([
     store.get(SLOT_A),
     store.get(SLOT_B),
@@ -209,9 +232,21 @@ export async function saveSnapshot(store: KeyValueStore, state: GameState): Prom
   const nextGeneration = currentGeneration + 1;
   const target: Slot = active === "a" ? "b" : "a";
   const payload = serializeSave(state, nextGeneration);
+  const expected = JSON.parse(payload) as { checksum: number };
 
   await store.set(keyFor(target), payload);
-  deserializeSave((await store.get(keyFor(target))) ?? "");
+
+  // B-10: the readback must be the payload we just wrote. Deserialising alone
+  // only proves the stored envelope is *some* valid save - an older, perfectly
+  // valid snapshot used to pass and the write was then reported as VERIFIED.
+  const readback = await store.get(keyFor(target));
+  const verified = safeDeserialize(readback);
+  if (!verified) throw new Error("Save readback missing or invalid");
+  if (verified.generation !== nextGeneration || verified.checksum !== expected.checksum) {
+    throw new Error("Save readback mismatch");
+  }
+
   await store.set(ACTIVE_SLOT, target);
   return nextGeneration;
 }
+
