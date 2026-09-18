@@ -3,6 +3,7 @@ import {
   applyBetaControlLoss,
   availableResources,
   bindConstraintWord,
+  closeInterpretation,
   commitControlRoute,
   commitPlan,
   eligiblePlans,
@@ -112,6 +113,15 @@ export class ConvergenceRuntime {
     const result = bindConstraintWord(this.state, word);
     if (result.ok) {
       this.appendLog("decision", word ? `CONSTRAINT COMMITTED: ${word}.` : "Constraint word cleared.");
+      this.publish();
+    }
+    return result;
+  }
+
+  closePlanInterpretation(): BetaActionResult {
+    const result = closeInterpretation(this.state);
+    if (result.ok) {
+      this.appendLog("decision", "INTERPRETATION CLOSED: snapshot preserved for deterministic reopen.");
       this.publish();
     }
     return result;
