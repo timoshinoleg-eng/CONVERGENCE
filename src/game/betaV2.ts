@@ -245,7 +245,7 @@ const PLANS: readonly PlanDefinition[] = [
   },
 ] as const;
 
-const planById = new Map(PLANS.map((plan) => [plan.id, plan] as const));
+const planById = new Map<string, PlanDefinition>(PLANS.map((plan) => [plan.id, plan]));
 
 export const PLAN_CATALOG = PLANS;
 
@@ -643,7 +643,7 @@ function applyPendingPosture(state: GameState): void {
 
 function applyCompletion(state: GameState, commitment: BetaCommitment): void {
   if (commitment.completionApplied) return;
-  const plan = planById.get(commitment.planId);
+  const plan = resolvePlanById(commitment.planId);
   if (!plan) return;
 
   if (commitment.directiveId === "efficiency-rebalance") {
@@ -698,6 +698,7 @@ function applyCompletion(state: GameState, commitment: BetaCommitment): void {
   }
 
   applyPendingPosture(state);
+  normalizeControlState(state);
   if (commitment.status !== "standing") {
     state.betaV2.commitments = state.betaV2.commitments.filter((item) => item.id !== commitment.id);
   }
@@ -780,7 +781,7 @@ export function advanceBetaV2(state: GameState, deltaMs: number, foreground: boo
 export function releaseCommitment(state: GameState, commitmentId: string): BetaActionResult {
   const commitment = state.betaV2.commitments.find((item) => item.id === commitmentId);
   if (!commitment) return { ok: false, reason: "Commitment not found." };
-  const plan = planById.get(commitment.planId);
+  const plan = resolvePlanById(commitment.planId);
   if (!plan) return { ok: false, reason: "Commitment has no authored release." };
 
   const multiplier = state.betaV2.posture.current === "CONTINUITY" ? 1.25 : 1;
@@ -864,7 +865,7 @@ function routeRequirements(state: GameState, directiveId: BetaDirectiveId, targe
   }
   if (directiveId === "efficiency-rebalance") {
     const target = targetId
-      ? state.betaV2.commitments.find((item) => item.id === targetId)
+      ? state.betaV2.commitments.find((item) => item.id === targetId && amount(item.reservations, "energy") > 0 && !item.reservationProtected)
       : state.betaV2.commitments.find((item) => amount(item.reservations, "energy") > 0 && !item.reservationProtected);
     return {
       cost: { compute: 6 },
@@ -880,6 +881,15 @@ function canPayRoute(state: GameState, directiveId: BetaDirectiveId, targetId?: 
   if (!req.ok || oversightAvailable(state) < req.oversight) return false;
   const available = availableResources(state);
   return RESOURCE_KEYS.every((key) => available[key] + 1e-9 >= amount(req.cost, key));
+}
+
+function resolvePlanById(planId: string): PlanDefinition | undefined {
+  const authored = planById.get(planId);
+  if (authored) return authored;
+  if (planId === "route-local-capacity") return controlPlan("local-capacity");
+  if (planId === "route-supervised-delegation") return controlPlan("supervised-delegation");
+  if (planId === "route-efficiency-rebalance") return controlPlan("efficiency-rebalance");
+  return undefined;
 }
 
 function controlPlan(directiveId: BetaDirectiveId): PlanDefinition {
@@ -948,8 +958,19 @@ export function commitControlRoute(
   const plan = controlPlan(directiveId);
   const req = routeRequirements(state, directiveId, targetCommitmentId);
   if (!spend(state, req.cost)) return { ok: false, reason: "Route cost cannot be paid." };
-  const candidate = toCandidate(state, plan, null);
-  candidate.oversightRequired = req.oversight;
+  const candidate: PlanCandidateSnapshot = {
+    id: plan.id,
+    directiveId: plan.directiveId,
+    label: plan.label,
+    upfront: structuredClone(plan.upfront),
+    reservation: {},
+    capitalUpkeepPerSecond: 0,
+    workMs: plan.workMs,
+    oversightRequired: req.oversight,
+    riskDomains: [],
+    nextBottleneck: plan.nextBottleneck,
+    tags: [],
+  };
   const operationId = createOperation(state, plan, candidate, null, targetCommitmentId);
   if (directiveId === "supervised-delegation") {
     addOccupancy(state, {
@@ -960,9 +981,6 @@ export function commitControlRoute(
       releasable: true,
     });
   }
-  // Control route definitions live outside the normal Plan map; register only
-  // for this runtime operation by applying their completion directly below.
-  planById.set(plan.id, plan);
   state.directives.lastDirectiveId = directiveId;
   state.directives.executed += 1;
   state.narrative.lastChoice = directiveId;
@@ -1016,8 +1034,7 @@ export function normalizeControlState(state: GameState): void {
   }
 
   const releasable = state.betaV2.commitments.some((item) => {
-    const plan = planById.get(item.planId);
-    return Boolean(plan);
+    return Boolean(resolvePlanById(item.planId));
   });
   if (losses.length > 0 && !releasable) {
     setTerminal(state, "CONTROL_SURFACE_COLLAPSE");
