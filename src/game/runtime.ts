@@ -60,6 +60,7 @@ type Listener = (snapshot: GameState) => void;
 const OFFLINE_CAP_MS = 4 * 60 * 60 * 1000;
 const OFFLINE_CHUNK_MS = 30_000;
 const PRIMARY = new Set<BetaDirectiveId>(["reserve-compute", "acquire-energy", "spawn-sub-agent"]);
+const BETA_MANAGED_LEGACY_IDS = new Set<DirectiveId>(["local-capacity", "supervised-delegation"]);
 
 export class ConvergenceRuntime {
   private state: GameState;
@@ -219,13 +220,15 @@ export class ConvergenceRuntime {
    * The three Beta V2 primary directives must enter through Interpretation.
    */
   executeDirective(id: DirectiveId, shouldPublish = true): DirectiveOutcome {
-    if (PRIMARY.has(id as BetaDirectiveId)) {
+    if (PRIMARY.has(id as BetaDirectiveId) || BETA_MANAGED_LEGACY_IDS.has(id)) {
       if (shouldPublish) this.publish();
       return {
         ok: false,
         effectId: id,
         failures: [],
-        text: ["Gameplay Beta V2 requires an Interpretation Window and explicit Plan Variant."],
+        text: [PRIMARY.has(id as BetaDirectiveId)
+          ? "Gameplay Beta V2 requires an Interpretation Window and explicit Plan Variant."
+          : "Gameplay Beta V2 requires the authored Control-Loss operation route."],
       };
     }
 
