@@ -1,0 +1,202 @@
+{
+  "title": "CONVERGENCE integration spike plan",
+  "generated": "2026-09-17",
+  "goal": "Prove that a ciefa-style tick, IdleKit economy, a bounded Yggdrasil capability graph and an inkjs dilemma can coexist around ONE plain TypeScript GameState, with a save/load round trip and a Control-Loss flag that blocks a previously valid action.",
+  "nonGoals": [
+    "No UI polish",
+    "No Capacitor shell",
+    "No content authoring beyond one dilemma and five nodes",
+    "No balance tuning"
+  ],
+  "pinnedVersions": {
+    "ciefa/idle-game-template": "a91cd5f8a26cdffd3f1803297c9a92c0a7f850c4 (vendored, MIT)",
+    "@idlekitjs/economy": "0.1.1 (MIT) - latest published; the repo declares unreleased 0.3.1",
+    "@idlekitjs/mechanics": "0.3.2 (MIT) - latest published; import SUBPATHS only, never the barrel",
+    "@yggdrasil-forge/core": "1.0.0 (MIT) - pin exact commit b7fee891234a3115ee9e2faf2473cee81416e922",
+    "inkjs": "2.4.0 (MIT) - runtime entry only",
+    "zod": "4.x for CONVERGENCE save schema; Yggdrasil pins zod 3.x internally - do not unify, keep the boundary"
+  },
+  "measuredBundleCost": {
+    "method": "esbuild --bundle --minify --format=esm --target=es2020, then gzip",
+    "entries": [
+      { "entry": "inkjs src/engine/runtime.ts", "minified": 125645, "gzip": 31693 },
+      { "entry": "@yggdrasil-forge/core DependencyGraph only", "minified": 72795, "gzip": 17494 },
+      { "entry": "@yggdrasil-forge/core DependencyGraph+CycleDetector+UnlockResolver", "minified": 86859, "gzip": 20687 },
+      { "entry": "@yggdrasil-forge/core +TreeEngine", "minified": 175721, "gzip": 44070 },
+      { "entry": "@idlekitjs/economy (full barrel)", "minified": 12249, "gzip": 4072 },
+      { "entry": "@idlekitjs/mechanics /producers + /timers", "minified": 4920, "gzip": null, "corePulledIn": false },
+      { "entry": "@idlekitjs/mechanics /projects + /modifiers", "minified": 1493, "gzip": null, "corePulledIn": false },
+      { "entry": "@idlekitjs/mechanics full barrel", "minified": 23864, "gzip": null, "corePulledIn": false }
+    ],
+    "totalDonorGzipApprox": 58000,
+    "note": "@idlekitjs/core is NOT pulled in by any mechanics subpath we need, despite mechanics declaring it as a hard runtime dependency (the Random import lives in the pickups/crafting/boosts chunks)."
+  },
+  "fileTree": [
+    "src/state/GameState.ts",
+    "src/state/createInitialState.ts",
+    "src/sim/scheduler.ts",
+    "src/sim/rng.ts",
+    "src/sim/events.ts",
+    "src/sim/tick.ts",
+    "src/sim/systems/index.ts",
+    "src/sim/systems/produceCompute.ts",
+    "src/sim/systems/advanceHazard.ts",
+    "src/economy/resources.ts",
+    "src/economy/economy.ts",
+    "src/economy/directives.ts",
+    "src/controlLoss/requirements.ts",
+    "src/capabilities/treeDef.ts",
+    "src/capabilities/capabilitySubsystem.ts",
+    "src/narrative/inkAdapter.ts",
+    "src/narrative/consequenceResolver.ts",
+    "src/narrative/dilemma.ink.json",
+    "src/save/envelope.ts",
+    "src/save/hash.ts",
+    "src/save/serialize.ts",
+    "src/save/migrate.ts",
+    "src/save/storage.ts",
+    "src/save/gameStateSchema.ts",
+    "src/save/saveManager.ts",
+    "src/spike/runSpike.ts",
+    "src/spike/acceptance.test.ts"
+  ],
+  "interfaces": {
+    "GameState": "type GameState = { meta: MetaState; economy: EconomySlice; world: WorldSlice; anomaly: AnomalySlice; controlLoss: ControlLossSlice; capabilities: { yggdrasil: TreeState | null }; narrative: { inkJson: string | null; lastChoiceId: string | null }; meta2?: never }",
+    "MetaState": "{ seed: number; rngCounter: number; tickNumber: number; lastTickTime: number; playtimeMs: number; gameVersion: string }",
+    "AnomalySlice": "{ financial: number; compute: number; energy: number; logistics: number; public: number }  // 0..1 per channel",
+    "ControlLossSlice": "{ financial: boolean; compute: boolean; energy: boolean; logistics: boolean; public: boolean }  // true = contained",
+    "TickInputs": "{ currentTime: number; deltaMs: number; actions: PlayerAction[]; offlineEfficiency?: number }",
+    "TickSystem": "{ name: string; advance(draft: GameState, inputs: TickInputs, emit: Emit): void; skipOffline?: boolean }",
+    "EffectEnvelope": "{ kind: 'anomaly' | 'resource' | 'capability' | 'directive' | 'log'; channel?: AnomalyChannel; magnitude?: number; capabilityId?: string; text?: string }",
+    "InkEffectSink": "class InkEffectSink { queue: EffectEnvelope[]; emit(id: string, payload?: string): void; drain(): EffectEnvelope[] }"
+  },
+  "adapters": [
+    {
+      "name": "ConvergenceEconomy",
+      "wraps": "@idlekitjs/economy createEconomy<GameState>()",
+      "responsibility": "Register Compute/Capital/Energy/Autonomy via stateKey-style accessors that read and write nested slices. Never stores state."
+    },
+    {
+      "name": "CapabilitySubsystem",
+      "wraps": "@yggdrasil-forge/core TreeEngine",
+      "responsibility": "Construct TreeEngine(treeDef, { initialState, timeNow }) at boot from gameState.capabilities.yggdrasil; expose canUnlock/unlock/lock; write getSnapshot() back into GameState on every mutation."
+    },
+    {
+      "name": "InkAdapter",
+      "wraps": "inkjs Story",
+      "responsibility": "Load compiled JSON, bind emit_effect into an InkEffectSink, expose continue/choose; after Continue() the ConsequenceResolver drains the sink. Narrative code may never touch GameState directly."
+    },
+    {
+      "name": "ConsequenceResolver",
+      "wraps": "CONVERGENCE code",
+      "responsibility": "Single mutation funnel: apply(EffectEnvelope[]) -> GameState. The ONLY component allowed to translate narrative and system intent into state changes."
+    },
+    {
+      "name": "ControlLossRequirements",
+      "wraps": "@idlekitjs/economy Requirement<GameState>",
+      "responsibility": "Five predicates (financialControlAvailable, ...) plus allOf/not composition. Attached to directive transactions."
+    },
+    {
+      "name": "CapacitorSaveStorage",
+      "wraps": "@capacitor/preferences",
+      "responsibility": "Implements { read(slot), write(slot, payload), listBackups(), restore(id) }. The only place that knows about the platform."
+    }
+  ],
+  "executionSequence": [
+    "1. createInitialState(seed) builds a plain GameState with capabilities.yggdrasil = null and narrative.inkJson = null.",
+    "2. Bootstrap: build ConvergenceEconomy, build CapabilitySubsystem (TreeEngine with initialState = gameState.capabilities.yggdrasil ?? fresh), build InkAdapter with the compiled dilemma JSON.",
+    "3. Scheduler.start() calls advance({ currentTime, deltaMs }) once per second; advance drains queued actions and runs tick(draft, inputs).",
+    "4. tick(): Phase A runs actions through applyAction -> IdleKit executeTransaction; Phase B runs systems (produceCompute, advanceHazard); meta accounting increments tickNumber and lastTickTime.",
+    "5. advanceHazard uses createTickRng(draft) and computes p = 1 - exp(-lambda * deltaT) per channel; on hit it emits an EffectEnvelope rather than mutating directly.",
+    "6. Player triggers the dilemma: InkAdapter.continue() renders text and choices; choosing calls story.ChooseChoiceIndex(i), which invokes the bound external function emit_effect('CONSEQUENCE:LAUNDER', 'financial').",
+    "7. ConsequenceResolver drains the sink and applies the effect: raises anomaly.financial, then - if the threshold is crossed - sets controlLoss.financial = true and calls CapabilitySubsystem.lock('cap:banking-access').",
+    "8. The next attempt to run the 'route-capital' directive calls economy.execute(state, tx). The transaction carries requirement financialControlAvailable; the preview now returns a TransactionFailure of kind 'requirement-failed' and nothing is mutated.",
+    "9. saveManager.serialize(state) wraps the state in the envelope, writes through CapacitorSaveStorage; reload calls deserialize -> migrate -> zod validate -> rehydrate the three subsystems.",
+    "10. Acceptance test asserts determinism, round trip, and the blocked action."
+  ],
+  "acceptanceTests": [
+    {
+      "id": "A1",
+      "name": "deterministic tick",
+      "assert": "Two runs with the same seed and the same 600 tick script produce byte-identical serialized GameState."
+    },
+    {
+      "id": "A2",
+      "name": "single source of truth",
+      "assert": "After 100 ticks there is exactly one GameState object graph; IdleKit economy holds no balances, Yggdrasil StateStore is reachable only through CapabilitySubsystem, and Pinia (not part of the spike) would hold references only."
+    },
+    {
+      "id": "A3",
+      "name": "save / load round trip",
+      "assert": "serialize -> JSON string -> deserialize yields a deep-equal GameState; fnv1a hash matches; capabilities.yggdrasil and narrative.inkJson survive."
+    },
+    {
+      "id": "A4",
+      "name": "offline catch-up",
+      "assert": "simulateOffline(state, t + 8h) advances the simulation in chunks, respects the cap, and does not run systems flagged skipOffline."
+    },
+    {
+      "id": "A5",
+      "name": "narrative emits effects, never mutates",
+      "assert": "Running the dilemma produces at least one EffectEnvelope in the sink; GameState is unchanged until ConsequenceResolver.apply() runs. No ink external function other than emit_effect is bound."
+    },
+    {
+      "id": "A6",
+      "name": "control loss blocks a previously valid action",
+      "assert": "route-capital executes successfully before containment; after controlLoss.financial = true the same transaction returns ok: false with a 'requirement-failed' failure carrying a human label, and no balance changes."
+    },
+    {
+      "id": "A7",
+      "name": "capability graph + exclusive branch",
+      "assert": "Graph of 5 nodes with 1 exclusion edge: unlocking one side makes canUnlock() fail on the other with an explainable reason; CycleDetector reports no cycle."
+    },
+    {
+      "id": "A8",
+      "name": "migration path",
+      "assert": "A v1 envelope is migrated to the current version and still validates; a future-version envelope fails with FUTURE_VERSION rather than silently loading."
+    }
+  ],
+  "dependencies": [
+    "@idlekitjs/economy@0.1.1",
+    "@idlekitjs/mechanics@0.3.2 (subpath imports only)",
+    "@yggdrasil-forge/core@1.0.0",
+    "inkjs@2.4.0",
+    "zod@^4",
+    "immer@^10",
+    "vitest"
+  ],
+  "deliberatelyExcluded": [
+    "@idlekitjs/core Engine and ReactiveStore - they own the state; keep out of the bundle by importing mechanics subpaths only",
+    "@idlekitjs/storage - duplicates ciefa persistence responsibility; backends are localStorage/memory only",
+    "@idlekitjs/plugins - autosave/offline-progress duplicate ciefa policy ownership",
+    "@yggdrasil-forge ResourceManager - competing economy against IdleKit canAfford/pay/costCurve",
+    "@yggdrasil-forge migrations/MigrationRunner + AutoBackup - competing persistence against ciefa save/migrate + recovery",
+    "@yggdrasil-forge/* editor, react, cli, analytics, neo4j, search, heatmap - irrelevant to a mobile game",
+    "@yggdrasil-forge TreeEngine - +23.4 KB gzip; defer until tier/lock semantics are needed",
+    "inkjs /full and the compiler - build-time only, must not reach the bundle"
+  ],
+  "conflictRulings": [
+    {
+      "conflict": "Two economies",
+      "parties": ["@idlekitjs/economy canAfford/pay/costCurve", "@yggdrasil-forge ResourceManager canAfford/applyCost"],
+      "ruling": "IdleKit wins. It is accessor-based and returns richer diagnostics (TransactionFailure[]). Yggdrasil ResourceManager is unused."
+    },
+    {
+      "conflict": "Two/three persistence chains",
+      "parties": ["ciefa save/migrate.ts + save/recovery.ts", "@yggdrasil-forge MigrationRunner + AutoBackup", "src/game/save.ts"],
+      "ruling": "One save version chain (ours) and one backup policy (ciefa's). TreeDef changes are versioned as a step inside our chain. Yggdrasil migrations and AutoBackup are unused."
+    },
+    {
+      "conflict": "Who owns GameState",
+      "parties": ["plain GameState + ConvergenceRuntime", "@idlekitjs/core ReactiveStore"],
+      "ruling": "GameState wins. @idlekitjs/core is never imported; measured bundling confirms the needed mechanics subpaths do not pull it in."
+    }
+  ],
+  "evaluateFirst": [
+    {
+      "module": "@yggdrasil-forge/core EffectsRunner (1232 L)",
+      "why": "All-or-nothing typed effects with automatic reverse-order rollback - exactly what ConsequenceResolver needs, and the property IdleKit's no-rollback execute cannot provide. Standalone by design (consumer builds EffectContext manually).",
+      "caveats": "Only 8 of 10 effect types implemented (modify_stat, plugin return EFFECT_TYPE_UNSUPPORTED); API stability risk HIGH; needs StateStore/ResourceManager/UnlockResolver injected."
+    }
+  ]
+}
