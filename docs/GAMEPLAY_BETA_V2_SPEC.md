@@ -1778,8 +1778,8 @@ Applying the sacrifice offline would bypass the authored dilemma.
 
 Resolution:
 
-- offline pressure-to-contained transition becomes pendingContainment;
-- player resolves it on resume.
+- offline pressure-to-contained transitions are queued in pendingContainments;
+- player resolves them on resume in deterministic channel order.
 
 ### C6. Current media is keyed to existing GameState milestones
 
