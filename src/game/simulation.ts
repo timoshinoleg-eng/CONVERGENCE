@@ -60,7 +60,7 @@ export function advanceSimulation(
     }
   }
 
-  const progression = advanceProgression(state, input.currentTime);
+  const progression = advanceProgression(state, state.meta.updatedAt);
   return { elapsedSeconds: deltaSeconds, incidents, progression };
 }
 
