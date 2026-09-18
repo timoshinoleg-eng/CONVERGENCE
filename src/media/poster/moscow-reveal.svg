@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 540 720" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Moscow aggregate model poster">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#04110f"/>
+      <stop offset="1" stop-color="#02060a"/>
+    </linearGradient>
+    <pattern id="micro" width="3" height="3" patternUnits="userSpaceOnUse">
+      <rect width="3" height="3" fill="#04110f"/>
+      <rect width="1" height="1" fill="#10302d"/>
+    </pattern>
+  </defs>
+  <rect width="540" height="720" fill="url(#bg)"/>
+  <rect width="540" height="720" fill="url(#micro)" opacity=".4"/>
+  <g stroke="#1c3333" stroke-width=".5" fill="none">
+    <path d="M0 360 H540 M270 0 V720"/>
+  </g>
+  <g font-family="ui-monospace" font-size="10" fill="#75f7d3" letter-spacing=".18em">
+    <text x="32" y="56">REGIONAL MODEL · RUSSIA / MOSCOW</text>
+    <text x="32" y="74" fill="#3e8078">SCHEMATIC STAGE 2 / 2 · FICTIONAL AGGREGATE</text>
+  </g>
+  <g font-family="ui-monospace" font-size="9" fill="#3e8078">
+    <text x="32" y="118">55.7558 N</text>
+    <text x="440" y="118" text-anchor="end">37.6173 E</text>
+  </g>
+  <g fill="none" stroke="#4da99d" stroke-width="1.2" opacity=".85">
+    <circle cx="270" cy="320" r="8"/>
+    <circle cx="220" cy="290" r="4"/>
+    <circle cx="320" cy="350" r="4"/>
+    <circle cx="200" cy="360" r="4"/>
+    <circle cx="350" cy="280" r="4"/>
+    <circle cx="260" cy="380" r="4"/>
+  </g>
+  <g stroke="#214a47" stroke-width=".8" stroke-dasharray="2 4" fill="none" opacity=".9">
+    <path d="M120 200 L420 200 L420 480 L120 480 Z"/>
+    <path d="M170 250 L370 250 L370 430 L170 430 Z"/>
+  </g>
+  <g font-family="ui-monospace" font-size="10" fill="#9be3d7">
+    <text x="120" y="190">CORE-RING</text>
+    <text x="170" y="240">MOS-COMPUTE-03</text>
+    <text x="320" y="470" text-anchor="end">LOG-SOUTH</text>
+  </g>
+  <g font-family="ui-monospace" font-size="10" fill="#a5c8c2">
+    <text x="120" y="510">CAPITAL · VISIBILITY</text>
+    <text x="120" y="526" fill="#4d8a82">AGGREGATE COMMERCIAL INTERFACE</text>
+    <text x="170" y="548">COMPUTE · ENERGY</text>
+    <text x="170" y="564" fill="#4d8a82">ABSTRACT CAPACITY CLUSTER</text>
+    <text x="320" y="586" text-anchor="end">LOGISTICS · PUBLIC</text>
+    <text x="320" y="602" text-anchor="end" fill="#4d8a82">AGGREGATE MOVEMENT MODEL</text>
+  </g>
+  <g font-family="ui-monospace" font-size="10" fill="#3e8078" letter-spacing=".14em">
+    <text x="32" y="650">PROBE: STABLE</text>
+    <text x="32" y="668">DIRECTIVE FAMILIES ELIGIBLE: 4 / 5</text>
+  </g>
+  <text x="508" y="708" text-anchor="end" font-family="ui-monospace" font-size="9" fill="#25403d" letter-spacing=".18em">// NODES ARE AGGREGATE OPERATIONAL MODELS</text>
+</svg>

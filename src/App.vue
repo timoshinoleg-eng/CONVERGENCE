@@ -2,6 +2,9 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useGameStore } from "./stores/game";
 import { getPlatform, type LifecyclePhase, type StorageKind } from "./platform";
+import MediaLayer from "./media/components/MediaLayer.vue";
+import MediaInlineLayer from "./media/components/MediaInlineLayer.vue";
+import MediaDebugEntry from "./media/components/MediaDebugEntry.vue";
 
 const game = useGameStore();
 const platform = getPlatform();
@@ -29,6 +32,8 @@ const moscowStage = computed<"candidate" | "schematic" | null>(() => {
   if (game.snapshot.narrative.episode === "moscow-candidate-01") return "candidate";
   return null;
 });
+
+const mediaLocale = computed(() => game.resolveMediaLocale());
 
 onMounted(async () => {
   await platform.ready();
@@ -153,6 +158,8 @@ async function resetGame(): Promise<void> {
         </p>
       </div>
 
+      <MediaInlineLayer :locale="mediaLocale" />
+
       <div v-if="game.prompt" class="directive-card">
         <p v-for="line in game.prompt.text" :key="line">{{ line }}</p>
         <div class="choices">
@@ -250,5 +257,9 @@ async function resetGame(): Promise<void> {
       <button @click="game.contain('financial')">Lose Financial Control</button>
       <button @click="game.contain('compute')">Lose Compute Control</button>
     </section>
+
+    <MediaDebugEntry />
+
+    <MediaLayer :locale="mediaLocale" />
   </main>
 </template>
