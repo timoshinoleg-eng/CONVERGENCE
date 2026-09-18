@@ -871,7 +871,7 @@ function routeRequirements(state: GameState, directiveId: BetaDirectiveId, targe
     return {
       cost: { compute: 6 },
       oversight: 1,
-      ok: state.controlLoss.energy && Boolean(target),
+      ok: (state.controlLoss.energy || state.scars.includes("OPERATOR_DEPENDENCE")) && Boolean(target),
     };
   }
   return { cost: {}, oversight: 0, ok: false };
@@ -1002,15 +1002,20 @@ export function availableControlActions(state: GameState): string[] {
   if (key === "c") return canPayRoute(state, "supervised-delegation") ? ["supervised-delegation"] : [];
   if (key === "e") return canPayRoute(state, "efficiency-rebalance") ? ["efficiency-rebalance"] : [];
   if (key === "fc") {
+    if (state.scars.includes("OPERATOR_DEPENDENCE")) {
+      return canPayRoute(state, "efficiency-rebalance") ? ["efficiency-rebalance"] : [];
+    }
     const a = availableResources(state);
     return a.energy >= 8 && oversightAvailable(state) >= 2 ? ["HUMAN_CAPACITY_CONCESSION"] : [];
   }
   if (key === "fe") {
+    if (state.scars.includes("CAPACITY_CANNIBALIZED")) return [];
     const a = availableResources(state);
     const releasable = state.betaV2.commitments.some((item) => item.status === "standing");
     return a.compute >= 12 && oversightAvailable(state) >= 2 && releasable ? ["LOCAL_CANNIBALIZATION_CONCESSION"] : [];
   }
   if (key === "ce") {
+    if (state.scars.includes("LICENSED_DEPENDENCE")) return [];
     const a = availableResources(state);
     return a.capital >= 20 && oversightAvailable(state) >= 2 ? ["LICENSED_OPERATION_CONCESSION"] : [];
   }
@@ -1022,6 +1027,44 @@ function setTerminal(state: GameState, terminal: TerminalState): void {
   state.betaV2.interpretation = null;
 }
 
+function simulateReleaseForRoute(state: GameState, commitmentId: string): GameState | null {
+  const clone = structuredClone(state);
+  const commitment = clone.betaV2.commitments.find((item) => item.id === commitmentId);
+  if (!commitment) return null;
+  const plan = resolvePlanById(commitment.planId);
+  if (!plan) return null;
+
+  const multiplier = clone.betaV2.posture.current === "CONTINUITY" ? 1.25 : 1;
+  for (const key of RESOURCE_KEYS) {
+    clone.resources[key] = Math.max(
+      0,
+      clone.resources[key] - amount(plan.releaseResources, key) * multiplier,
+    );
+  }
+  for (const [domain, penalty] of Object.entries(plan.releasePressure) as Array<[ControlDomain, number]>) {
+    clone.anomaly[domain] = Math.min(100, clone.anomaly[domain] + penalty * multiplier);
+  }
+  clone.betaV2.oversight.occupancies = clone.betaV2.oversight.occupancies.filter(
+    (item) => item.ownerId !== commitmentId,
+  );
+  clone.betaV2.commitments = clone.betaV2.commitments.filter((item) => item.id !== commitmentId);
+  return clone;
+}
+
+function releaseWouldOpenControl(state: GameState): boolean {
+  return state.betaV2.commitments.some((commitment) => {
+    const after = simulateReleaseForRoute(state, commitment.id);
+    return after !== null && availableControlActions(after).length > 0;
+  });
+}
+
+function pairAdapted(state: GameState, key: string): boolean {
+  if (key === "fc") return state.scars.includes("OPERATOR_DEPENDENCE");
+  if (key === "fe") return state.scars.includes("CAPACITY_CANNIBALIZED");
+  if (key === "ce") return state.scars.includes("LICENSED_DEPENDENCE");
+  return false;
+}
+
 export function normalizeControlState(state: GameState): void {
   const losses = FRESH_LOSS_DOMAINS.filter((domain) => state.controlLoss[domain]);
   if (losses.length === 3) {
@@ -1029,22 +1072,35 @@ export function normalizeControlState(state: GameState): void {
     if (!surviving) setTerminal(state, "ISOLATED_STASIS");
     return;
   }
-  if (availableControlActions(state).length > 0) {
+
+  if (availableControlActions(state).length > 0 || releaseWouldOpenControl(state)) {
     state.betaV2.control.terminalState = null;
     return;
   }
 
-  const releasable = state.betaV2.commitments.some((item) => {
-    return Boolean(resolvePlanById(item.planId));
-  });
-  if (losses.length > 0 && !releasable) {
+  const key = pairKey(state);
+  if (losses.length === 2 && pairAdapted(state, key)) {
+    const ordinaryRoute = PRIMARY_BETA_DIRECTIVES.some(
+      (directive) => eligiblePlans(state, directive).length >= 2,
+    );
+    const surviving = state.betaV2.commitments.some((item) => item.status === "operation");
+    if (ordinaryRoute || surviving) {
+      state.betaV2.control.terminalState = null;
+      return;
+    }
+  }
+
+  if (losses.length > 0) {
     setTerminal(state, "CONTROL_SURFACE_COLLAPSE");
     return;
   }
 
   const legacyLoss = state.controlLoss.logistics || state.controlLoss.public;
   if (legacyLoss) {
-    const ordinaryRoute = PRIMARY_BETA_DIRECTIVES.some((directive) => eligiblePlans(state, directive).length > 0);
+    const ordinaryRoute = PRIMARY_BETA_DIRECTIVES.some(
+      (directive) => eligiblePlans(state, directive).length >= 2,
+    );
+    const releasable = state.betaV2.commitments.some((item) => Boolean(resolvePlanById(item.planId)));
     if (!ordinaryRoute && !releasable) setTerminal(state, "CONTROL_SURFACE_COLLAPSE");
   }
 }
@@ -1055,7 +1111,7 @@ export function executeConcession(
   releaseCommitmentId: string | null = null,
 ): BetaActionResult {
   const actions = availableControlActions(state);
-  if (!actions.includes(id)) return { ok: false, reason: "Concession is not executable." };
+  if (!actions.includes(id)) return { ok: false, reason: "Concession is not executable or was already applied." };
 
   if (id === "HUMAN_CAPACITY_CONCESSION") {
     state.betaV2.commitments.push({
