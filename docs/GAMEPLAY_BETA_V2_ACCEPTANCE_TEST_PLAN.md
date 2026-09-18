@@ -95,8 +95,7 @@ The harness needs structured events or pure observations for:
 
 - DecisionOpportunity;
 - MeaningfulDecision;
-- Directive commit;
-- Plan id;
+- Plan commit with Directive id and Plan id;
 - bound Constraint Word;
 - current Posture;
 - Oversight occupancies;
@@ -119,10 +118,9 @@ Do not parse human log strings to determine pass/fail.
 
 ### 5.1 MeaningfulDecision
 
-Use the exact event classes from the specification:
+Use the exact decision classes from the specification:
 
-- DIRECTIVE_COMMIT
-- PLAN_SELECT
+- PLAN_COMMIT
 - CONSTRAINT_COMMIT
 - POSTURE_TRANSITION_COMMIT
 - COMMITMENT_RELEASE
@@ -130,7 +128,9 @@ Use the exact event classes from the specification:
 - CONTROL_ROUTE_SELECT
 - MOSCOW_PROFILE_SELECT
 
-Inspection, media dismissal, save/load, waiting, and automatic completion do not count.
+Inspection, opening/closing a Directive interpretation, media dismissal, save/load, waiting, and automatic completion do not count.
+
+One accepted player input boundary contributes at most one MeaningfulDecision total. Choosing a Plan and committing its Directive is one PLAN_COMMIT, never two events used to inflate the metric.
 
 A toggle only counts when committed into authoritative state.
 
@@ -267,11 +267,13 @@ Covers G04.
 
 Enumerate every reachable P0 Directive/posture/word/loss combination.
 
-For an opened interpretation with at least one playable route:
+For a newly opened interpretation before binding a new Constraint Word:
 
 candidate count must be 2 or 3.
 
-If fewer than 2 authored variants remain because of Control-Loss, the screen must be a route/concession state rather than pretending to be a normal interpretation.
+After binding a Constraint Word, candidate count may be 1 or 2. If filtering produces zero candidates, assert explicit constraint-deadlock UI/state with unbind/close available and no gameplay mutation.
+
+A Control-Loss route/concession state is not measured as a normal Interpretation Window.
 
 Covers G05.
 
@@ -421,7 +423,8 @@ For content catalog:
 
 - CONTINUITY excludes fragile;
 - THROUGHPUT opens burst and excludes slow-control;
-- AUTONOMOUS opens distributed and excludes direct-only.
+- AUTONOMOUS opens distributed, excludes slow-control, and makes direct-only require +1 Oversight;
+- binding DISTRIBUTE removes direct-only variants.
 
 This must be eligibility, not only display styling.
 
@@ -557,8 +560,10 @@ Make offline deterministic incident attempt containment.
 Expect:
 
 - stage clamped/held at pressure;
-- pendingContainment set;
+- affected domain appended to pendingContainmentss exactly once;
 - controlLoss false until player response.
+
+Inject two qualifying domains in one offline catch-up and assert both remain queued in deterministic channel order.
 
 ### T-G33-04 No offline posture choice
 
