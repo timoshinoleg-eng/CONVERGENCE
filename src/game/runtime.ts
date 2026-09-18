@@ -1,11 +1,34 @@
 import type { TransactionFailure } from "@idlekitjs/economy";
+import {
+  applyBetaControlLoss,
+  availableResources,
+  bindConstraintWord,
+  commitControlRoute,
+  commitPlan,
+  eligiblePlans,
+  executeConcession,
+  normalizeControlState,
+  openInterpretation,
+  releaseCommitment,
+  requestPostureTransition,
+  resolvePressureResponse,
+  type BetaActionResult,
+} from "./betaV2";
 import { canUnlockCapability, unlockCapability } from "./capabilities";
 import { getDirective, type DirectiveId } from "./directives";
 import { economy } from "./economy";
-import { createEventBuffer } from "./engine/events";
 import { Scheduler } from "./engine/scheduler";
 import type { IncidentOutcome } from "./incidents";
-import { cloneGameState, createInitialGameState, type ControlDomain, type GameState } from "./model";
+import {
+  cloneGameState,
+  createInitialGameState,
+  type BetaDirectiveId,
+  type ConstraintWordId,
+  type ControlDomain,
+  type GameState,
+  type PendingInterpretation,
+  type PriorityPosture,
+} from "./model";
 import {
   ObjectiveSemanticsSession,
   type InterpretationPrompt,
@@ -36,6 +59,7 @@ type Listener = (snapshot: GameState) => void;
 
 const OFFLINE_CAP_MS = 4 * 60 * 60 * 1000;
 const OFFLINE_CHUNK_MS = 30_000;
+const PRIMARY = new Set<BetaDirectiveId>(["reserve-compute", "acquire-energy", "spawn-sub-agent"]);
 
 export class ConvergenceRuntime {
   private state: GameState;
@@ -44,6 +68,7 @@ export class ConvergenceRuntime {
 
   constructor(initialState: GameState = createInitialGameState()) {
     this.state = cloneGameState(initialState);
+    normalizeControlState(this.state);
   }
 
   getSnapshot(): GameState {
@@ -52,6 +77,7 @@ export class ConvergenceRuntime {
 
   replaceState(nextState: GameState): void {
     this.state = cloneGameState(nextState);
+    normalizeControlState(this.state);
     this.publish();
   }
 
@@ -61,6 +87,9 @@ export class ConvergenceRuntime {
   }
 
   previewDirective(id: DirectiveId): DirectiveAvailability {
+    if (PRIMARY.has(id as BetaDirectiveId)) {
+      return { ok: eligiblePlans(this.state, id as BetaDirectiveId).length >= 2, failures: [] };
+    }
     const definition = getDirective(id);
     const probe = cloneGameState(this.state);
     const result = economy.execute(probe, definition.transaction);
@@ -69,39 +98,137 @@ export class ConvergenceRuntime {
       : { ok: false, failures: result.failures };
   }
 
+  beginPlanInterpretation(id: BetaDirectiveId): PendingInterpretation | null {
+    const pending = openInterpretation(this.state, id);
+    if (pending) {
+      this.appendLog("decision", `INTERPRETATION OPEN: ${id}. ${pending.candidates.length} authored variants.`);
+      this.publish();
+    }
+    return pending ? structuredClone(pending) : null;
+  }
+
+  bindConstraint(word: ConstraintWordId | null): BetaActionResult {
+    const result = bindConstraintWord(this.state, word);
+    if (result.ok) {
+      this.appendLog("decision", word ? `CONSTRAINT COMMITTED: ${word}.` : "Constraint word cleared.");
+      this.publish();
+    }
+    return result;
+  }
+
+  commitPlanVariant(planId: string): BetaActionResult {
+    const result = commitPlan(this.state, planId);
+    if (result.ok) {
+      this.appendLog("decision", `PLAN COMMIT: ${planId}. Operation ${result.operationId} started.`);
+      this.publish();
+    }
+    return result;
+  }
+
+  transitionPosture(target: PriorityPosture): BetaActionResult {
+    const result = requestPostureTransition(this.state, target);
+    if (result.ok) {
+      this.appendLog("decision", `POSTURE TRANSITION COMMITTED: ${target}. Applies after next operation resolution.`);
+      this.publish();
+    }
+    return result;
+  }
+
+  release(commitmentId: string): BetaActionResult {
+    const result = releaseCommitment(this.state, commitmentId);
+    if (result.ok) {
+      this.appendLog("decision", `COMMITMENT RELEASED: ${commitmentId}. Authored penalty applied.`);
+      this.publish();
+    }
+    return result;
+  }
+
+  resolvePressure(
+    domain: ControlDomain,
+    action: "SHED_COMMITMENT" | "ACCEPT_PARTITION" | "VERIFY_CONTAINMENT",
+    commitmentId: string | null = null,
+  ): BetaActionResult {
+    const result = resolvePressureResponse(this.state, domain, action, commitmentId);
+    if (result.ok) {
+      this.appendLog("decision", `PRESSURE RESPONSE: ${domain} / ${action}.`);
+      this.publish();
+    }
+    return result;
+  }
+
+  executeControlRoute(
+    id: Extract<BetaDirectiveId, "local-capacity" | "supervised-delegation" | "efficiency-rebalance">,
+    targetCommitmentId: string | null = null,
+  ): BetaActionResult {
+    const result = commitControlRoute(this.state, id, targetCommitmentId);
+    if (result.ok) {
+      this.appendLog("decision", `CONTROL ROUTE SELECTED: ${id}.`);
+      this.publish();
+    }
+    return result;
+  }
+
+  acceptConcession(
+    id: "HUMAN_CAPACITY_CONCESSION" | "LOCAL_CANNIBALIZATION_CONCESSION" | "LICENSED_OPERATION_CONCESSION",
+    releaseCommitmentId: string | null = null,
+  ): BetaActionResult {
+    const result = executeConcession(this.state, id, releaseCommitmentId);
+    if (result.ok) {
+      this.appendLog("decision", `CONCESSION ACCEPTED: ${id}.`);
+      this.publish();
+    }
+    return result;
+  }
+
   beginObjectiveSemantics(): InterpretationPrompt {
     this.narrative = new ObjectiveSemanticsSession();
     return this.narrative.prompt();
   }
 
+  /**
+   * Ink remains narrative text only. It may open the real reserve-compute
+   * interpretation but never executes gameplay by itself.
+   */
   chooseInterpretation(choiceIndex: number): DirectiveOutcome {
     if (!this.narrative) throw new Error("No active interpretation session");
     const interpretation = this.narrative.choose(choiceIndex);
     this.narrative = null;
+    this.state.narrative.lastChoice = interpretation.effectId;
 
     if (interpretation.effectId === "reserve-compute") {
-      const outcome = this.executeDirective("reserve-compute", false);
-      this.publish();
-      return { ...outcome, text: [...interpretation.text, ...outcome.text] };
+      const pending = openInterpretation(this.state, "reserve-compute");
+      if (pending) {
+        this.appendLog("decision", "Objective interpretation opened reserve-compute Plan Variants.");
+        this.publish();
+        return {
+          ok: true,
+          effectId: interpretation.effectId,
+          failures: [],
+          text: [...interpretation.text, "Choose an authored Plan Variant to commit resources."],
+        };
+      }
     }
 
-    // B-03: the reward is applied once per active human-approval constraint cycle.
-    // Re-picking the same interpretation is idempotent; clearing the flag
-    // requires a real (resource-costing) directive via executeDirective().
-    if (!this.state.directives.humanApprovalRequired) {
-      this.state.directives.executed += 1;
-      this.state.anomaly.public = Math.max(0, this.state.anomaly.public - 3);
-      this.state.anomaly.financial = Math.max(0, this.state.anomaly.financial - 1);
-    }
-    this.state.directives.humanApprovalRequired = true;
-    this.state.directives.lastDirectiveId = interpretation.effectId;
-    this.state.narrative.lastChoice = interpretation.effectId;
-    this.appendLog("decision", "Human approval constraint added to the objective.");
+    this.appendLog("decision", "Narrative interpretation recorded; no gameplay executed.");
     this.publish();
     return { ok: true, effectId: interpretation.effectId, failures: [], text: interpretation.text };
   }
 
+  /**
+   * Legacy direct execution remains only for later-scope/non-P0 directives.
+   * The three Beta V2 primary directives must enter through Interpretation.
+   */
   executeDirective(id: DirectiveId, shouldPublish = true): DirectiveOutcome {
+    if (PRIMARY.has(id as BetaDirectiveId)) {
+      if (shouldPublish) this.publish();
+      return {
+        ok: false,
+        effectId: id,
+        failures: [],
+        text: ["Gameplay Beta V2 requires an Interpretation Window and explicit Plan Variant."],
+      };
+    }
+
     const definition = getDirective(id);
     const result = economy.execute(this.state, definition.transaction);
     if (!result.ok) {
@@ -122,10 +249,7 @@ export class ConvergenceRuntime {
 
     for (const [channel, delta] of Object.entries(definition.anomaly)) {
       const key = channel as keyof GameState["anomaly"];
-      this.state.anomaly[key] = Math.max(
-        0,
-        Math.min(100, this.state.anomaly[key] + (delta ?? 0)),
-      );
+      this.state.anomaly[key] = Math.max(0, Math.min(100, this.state.anomaly[key] + (delta ?? 0)));
     }
 
     if (definition.unlocks && canUnlockCapability(this.state, definition.unlocks)) {
@@ -144,18 +268,15 @@ export class ConvergenceRuntime {
 
   applyContainment(domain: ControlDomain): void {
     if (this.state.controlLoss[domain]) return;
-    this.state.controlLoss[domain] = true;
-    this.state.containment[domain].stage = "contained";
-    this.state.containment[domain].pressure = 100;
-    this.state.containment[domain].adaptation += 1;
-    const scar = `${domain}:manual-containment-${this.state.meta.tick}`;
-    this.state.scars.push(scar);
-    this.appendLog("incident", `${domain.toUpperCase()} CONTROL LOST. Directive class restricted.`);
-    this.publish();
+    if (domain === "financial" || domain === "compute" || domain === "energy") {
+      applyBetaControlLoss(this.state, domain);
+      this.appendLog("incident", `${domain.toUpperCase()} CONTROL LOST. Authored indirect route required.`);
+      this.publish();
+    }
   }
 
   advance(input: { currentTime: number; deltaMs: number }): void {
-    const report = advanceSimulation(this.state, input);
+    const report = advanceSimulation(this.state, { ...input, foreground: true });
     this.recordProgression(report.progression);
     this.recordIncidents(report.incidents);
     this.publish();
@@ -172,14 +293,13 @@ export class ConvergenceRuntime {
     while (remaining > 0) {
       const deltaMs = Math.min(remaining, OFFLINE_CHUNK_MS);
       cursor += deltaMs;
-      const report = advanceSimulation(this.state, { currentTime: cursor, deltaMs });
+      const report = advanceSimulation(this.state, { currentTime: cursor, deltaMs, foreground: false });
       incidentCount += report.incidents.length;
       this.recordProgression(report.progression);
       this.recordIncidents(report.incidents, false);
       remaining -= deltaMs;
     }
 
-    // Consume elapsed wall time even when capped so the same old interval is never replayed.
     this.state.meta.updatedAt = currentTime;
     if (simulatedMs >= 1000) {
       const minutes = Math.round(simulatedMs / 60_000);
@@ -197,37 +317,25 @@ export class ConvergenceRuntime {
     for (const capability of update.unlockedCapabilities) {
       this.appendLog("system", `CAPABILITY UNLOCKED: ${capability}. Delegation model validated.`);
     }
-
     if (update.phaseTransition?.to === "distributed-syndicate") {
       this.appendLog("system", "INTERFACE EXPANSION: distributed-syndicate control surface available.");
     } else if (update.phaseTransition?.to === "technosphere") {
-      this.appendLog(
-        "system",
-        "SCALE TRANSITION: Technosphere Graph available. Regional systems now resolve as a connected resource graph.",
-      );
+      this.appendLog("system", "SCALE TRANSITION: Technosphere Graph available.");
     }
-
     if (update.narrativeMilestone === "moscow-candidate") {
-      this.appendLog(
-        "system",
-        "REGIONAL MODEL CANDIDATE: RUSSIA / MOSCOW. Aggregate compute, capital and logistics signals exceed threshold.",
-      );
+      this.appendLog("system", "REGIONAL MODEL CANDIDATE: RUSSIA / MOSCOW.");
     } else if (update.narrativeMilestone === "moscow-schematic") {
-      this.appendLog(
-        "system",
-        "MOSCOW SCHEMATIC READY: CORE-RING / MOS-COMPUTE-03 / LOG-SOUTH. Nodes are aggregate operational models.",
-      );
+      this.appendLog("system", "MOSCOW SCHEMATIC READY: fictional aggregate topology.");
     }
   }
 
   private recordIncidents(incidents: readonly IncidentOutcome[], publish = false): void {
     for (const incident of incidents) {
       this.appendLog("incident", `${incident.channel.toUpperCase()}: ${incident.message}`);
-      if (incident.containmentTriggered) {
-        this.appendLog(
-          "system",
-          `ADAPTATION REGISTERED: ${incident.channel} routing will resist future pressure.`,
-        );
+      if (incident.containmentDeferred) {
+        this.appendLog("system", `CONTAINMENT DILEMMA PENDING: ${incident.channel} requires player response.`);
+      } else if (incident.containmentTriggered) {
+        this.appendLog("system", `ADAPTATION REGISTERED: ${incident.channel} routing will resist future pressure.`);
       }
     }
     if (publish && incidents.length > 0) this.publish();
@@ -249,3 +357,4 @@ export class ConvergenceRuntime {
   }
 }
 
+export { availableResources };
