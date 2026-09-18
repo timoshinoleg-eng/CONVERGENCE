@@ -212,6 +212,22 @@ describe("Beta V2 red-team invariants", () => {
     expect(state.betaV2.commitments).toHaveLength(0);
   });
 
+  it("RT-METRIC word bind/unbind spam cannot farm MeaningfulDecision count", () => {
+    const state = richState();
+    openInterpretation(state, "reserve-compute");
+    const before = state.betaV2.progress.meaningfulDecisions;
+
+    for (let index = 0; index < 100; index += 1) {
+      expect(bindConstraintWord(state, "RESERVE").ok).toBe(true);
+      expect(bindConstraintWord(state, null).ok).toBe(true);
+    }
+
+    expect(
+      state.betaV2.progress.meaningfulDecisions - before,
+      "Repeatedly returning to the same Constraint consequence inside one pending interpretation must not manufacture the >=12 decision metric.",
+    ).toBeLessThanOrEqual(1);
+  });
+
   it("RT-POSTURE-SPAM charges Capital/Oversight once and rejects repeats while pending", () => {
     const state = richState();
     state.betaV2.progress.resolvedOperations = 1;
@@ -356,6 +372,32 @@ describe("Beta V2 red-team invariants", () => {
     expect(after.betaV2.interpretation?.remainingForegroundMs).toBe(8_000);
     expect(after.betaV2.commitments).toHaveLength(0);
     expect(after.directives.executed).toBe(0);
+  });
+
+  it("RT-OFFLINE one catch-up can queue multiple incident-driven F/C/E dilemmas without auto-loss", () => {
+    let observed: GameState | null = null;
+
+    for (let seed = 1; seed <= 250 && observed === null; seed += 1) {
+      const state = richState(seed);
+      for (const domain of FCE) {
+        state.anomaly[domain] = 100;
+        state.containment[domain].stage = "pressure";
+        state.containment[domain].pressure = 59;
+      }
+      const runtime = new ConvergenceRuntime(state);
+      runtime.advanceOffline(START + 60_000);
+      const after = runtime.getSnapshot();
+      if (after.betaV2.control.pendingContainments.length >= 2) observed = after;
+    }
+
+    expect(observed, "expected deterministic seed search to find a multi-domain offline containment attempt").not.toBeNull();
+    const pending = observed!.betaV2.control.pendingContainments;
+    const order = ["financial", "compute", "energy"];
+    expect(pending).toEqual([...pending].sort((a, b) => order.indexOf(a) - order.indexOf(b)));
+    for (const domain of pending) {
+      expect(observed!.controlLoss[domain]).toBe(false);
+      expect(observed!.containment[domain].stage).toBe("pressure");
+    }
   });
 
   it("RT-OFFLINE pendingContainments persists every queued F/C/E domain in deterministic order", () => {
