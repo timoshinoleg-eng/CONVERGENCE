@@ -740,7 +740,15 @@ function applyCompletion(state: GameState, commitment: BetaCommitment): void {
   }
 
   applyPendingPosture(state);
-  normalizeControlState(state);
+  // Post-loss normalization is mandatory at the loss/concession/release
+  // boundary. A successfully completed indirect route is itself the authored
+  // adaptation and must not be terminalized merely because the same route
+  // cannot be paid again immediately. Triple loss is the exception: once its
+  // surviving control-route finishes, the run must resolve into its authored
+  // terminal unless another surviving route still exists.
+  if (FRESH_LOSS_DOMAINS.every((domain) => state.controlLoss[domain])) {
+    normalizeControlState(state);
+  }
   if (commitment.status !== "standing") {
     state.betaV2.commitments = state.betaV2.commitments.filter((item) => item.id !== commitment.id);
   }
