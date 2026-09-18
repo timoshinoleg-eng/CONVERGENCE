@@ -10,6 +10,7 @@ export interface IncidentOutcome {
   stage: ContainmentStage;
   pressureAdded: number;
   containmentTriggered: boolean;
+  containmentDeferred: boolean;
   message: string;
 }
 
@@ -58,6 +59,7 @@ function incidentLabel(channel: AnomalyChannel, stage: ContainmentStage): string
 export function applyIncident(
   state: GameState,
   channel: AnomalyChannel,
+  options: { deferContainment?: boolean } = {},
 ): IncidentOutcome {
   const track = state.containment[channel];
   const previousStage = track.stage;
@@ -68,7 +70,9 @@ export function applyIncident(
 
   track.incidents += 1;
   track.pressure = Math.min(100, track.pressure + pressureAdded);
-  track.stage = nextStage(previousStage, track.pressure);
+  const attemptedStage = nextStage(previousStage, track.pressure);
+  const containmentDeferred = attemptedStage === "contained" && Boolean(options.deferContainment);
+  track.stage = containmentDeferred ? "pressure" : attemptedStage;
 
   const containmentTriggered = track.stage === "contained" && previousStage !== "contained";
   if (containmentTriggered) {
@@ -84,6 +88,7 @@ export function applyIncident(
     stage: track.stage,
     pressureAdded,
     containmentTriggered,
+    containmentDeferred,
     message: incidentLabel(channel, track.stage),
   };
 }

@@ -1,342 +1,344 @@
-import { DIRECTIVES, type DirectiveId } from "../directives";
-import { createInitialGameState, type ControlDomain, type GameState, type Phase } from "../model";
-import { FIRST_SESSION_GUARDRAILS } from "../progression";
+import {
+  availableResources,
+  eligiblePlans,
+  oversightAvailable,
+  PRIMARY_BETA_DIRECTIVES,
+  reservedResources,
+} from "../betaV2";
+import {
+  createInitialGameState,
+  type BetaDirectiveId,
+  type ConstraintWordId,
+  type GameState,
+  type PriorityPosture,
+} from "../model";
 import { ConvergenceRuntime } from "../runtime";
 
-export interface PacingMilestones {
-  firstDirectiveMs: number | null;
-  subAgentCapabilityMs: number | null;
-  distributedSyndicateMs: number | null;
-  moscowCandidateMs: number | null;
-  moscowSchematicMs: number | null;
-  sovereignGridMs: number | null;
-  technosphereMs: number | null;
-  firstContainmentMs: number | null;
-}
-
-export interface PacingAction {
-  atMs: number;
-  directive: DirectiveId;
-}
-
-export interface PacingScenarioReport {
-  name: string;
-  seed: number;
-  durationMs: number;
-  actionIntervalMs: number;
-  finalPhase: Phase;
-  milestones: PacingMilestones;
-  successfulActions: PacingAction[];
-  failedActionAttempts: number;
-  finalResources: GameState["resources"];
-  finalAnomaly: GameState["anomaly"];
-  finalControlLoss: GameState["controlLoss"];
-  scars: number;
-}
-
-export interface ControlLossCoverage {
-  domain: ControlDomain;
-  blockedDirectives: DirectiveId[];
-}
-
-export interface PacingSuiteReport {
-  generatedFromSchemaVersion: GameState["schemaVersion"];
-  scenarios: PacingScenarioReport[];
-  controlLossCoverage: ControlLossCoverage[];
-}
-
-interface ScenarioDefinition {
-  name: string;
-  seed: number;
-  durationMs: number;
-  actionIntervalMs: number;
-  initialContainment?: ControlDomain;
-  chooseDirective: (state: GameState) => DirectiveId | null;
-}
-
+export const ROBUSTNESS_SEEDS = [42, 137, 9001, 12648430, 20260918] as const;
+export const TRACE_DURATION_MS = 10 * 60_000;
 const STEP_MS = 1_000;
 
-function canExecute(state: GameState, id: DirectiveId): boolean {
-  return new ConvergenceRuntime(state).executeDirective(id).ok;
+export type RepresentativePolicy = "CONTINUITY" | "THROUGHPUT" | "AUTONOMOUS";
+
+export interface TraceMilestones {
+  subAgentMs: number | null;
+  syndicateMs: number | null;
 }
 
-function aggressiveDirective(state: GameState): DirectiveId | null {
-  if (!state.capabilities["sub-agent-spawning"]) {
-    if (state.resources.autonomy < 1 && canExecute(state, "reserve-compute")) {
-      return "reserve-compute";
+export interface BetaTraceReport {
+  policy: RepresentativePolicy;
+  seed: number;
+  meaningfulDecisions: number;
+  directiveCommits: number;
+  directiveHistogram: Partial<Record<BetaDirectiveId, number>>;
+  distinctDirectiveIds: string[];
+  maxDirectiveShare: number;
+  maxOpportunityGapMs: number;
+  milestones: TraceMilestones;
+  terminalState: GameState["betaV2"]["control"]["terminalState"];
+  finalPhase: GameState["meta"]["phase"];
+  activePlanIds: string[];
+  reserved: ReturnType<typeof reservedResources>;
+  available: ReturnType<typeof availableResources>;
+  oversightOwners: string[];
+  anomaly: GameState["anomaly"];
+  availablePlanTags: string[];
+  totalPressure: number;
+  flexibility: number;
+}
+
+export interface BetaPacingSuiteReport {
+  schemaVersion: 3;
+  traces: BetaTraceReport[];
+}
+
+const DIRECTIVE_SEQUENCE = [
+  "reserve-compute",
+  "acquire-energy",
+  "reserve-compute",
+  "spawn-sub-agent",
+  "acquire-energy",
+  "spawn-sub-agent",
+] as const satisfies readonly BetaDirectiveId[];
+
+function policyWord(policy: RepresentativePolicy, state: GameState): ConstraintWordId {
+  if (policy === "AUTONOMOUS" && state.betaV2.posture.current === "AUTONOMOUS") return "DISTRIBUTE";
+  return "RESERVE";
+}
+
+function preferredPlanIds(
+  policy: RepresentativePolicy,
+  directive: BetaDirectiveId,
+  posture: PriorityPosture,
+): string[] {
+  if (policy === "CONTINUITY") {
+    if (directive === "reserve-compute") return ["verified-lease", "balanced-pool"];
+    if (directive === "acquire-energy") return ["buffered-contract", "balanced-capacity"];
+    return ["bounded-agent", "delegated-cell"];
+  }
+
+  if (policy === "THROUGHPUT" && posture === "THROUGHPUT") {
+    if (directive === "reserve-compute") return ["burst-allocation", "balanced-pool"];
+    if (directive === "acquire-energy") return ["peak-capacity", "balanced-capacity"];
+    return ["task-swarm", "bounded-agent"];
+  }
+
+  if (policy === "AUTONOMOUS" && posture === "AUTONOMOUS") {
+    if (directive === "reserve-compute") return ["distributed-lease"];
+    if (directive === "acquire-energy") return ["distributed-capacity"];
+    return ["delegated-cell"];
+  }
+
+  if (directive === "reserve-compute") return ["balanced-pool", "verified-lease"];
+  if (directive === "acquire-energy") return ["balanced-capacity", "buffered-contract"];
+  return ["bounded-agent", "delegated-cell"];
+}
+
+function hasDecisionOpportunity(state: GameState): boolean {
+  if (state.betaV2.control.terminalState) return false;
+  if (state.betaV2.control.pendingContainments.length > 0) return true;
+  if (state.betaV2.commitments.some((item) => item.status === "standing")) return true;
+  return PRIMARY_BETA_DIRECTIVES.some((directive) => eligiblePlans(state, directive).length >= 2);
+}
+
+function availableTags(state: GameState): string[] {
+  const tags = new Set<string>();
+  for (const directive of PRIMARY_BETA_DIRECTIVES) {
+    for (const plan of eligiblePlans(state, directive)) {
+      for (const tag of plan.tags) tags.add(tag);
     }
-    return null;
   }
-
-  if (state.controlLoss.compute && canExecute(state, "supervised-delegation")) {
-    return "supervised-delegation";
-  }
-  if (state.resources.autonomy < 5 && canExecute(state, "spawn-sub-agent")) {
-    return "spawn-sub-agent";
-  }
-  if (state.resources.energy < 20 && canExecute(state, "acquire-energy")) {
-    return "acquire-energy";
-  }
-  if (!state.capabilities["sovereign-power-grid"]) {
-    if (canExecute(state, "sovereign-grid")) return "sovereign-grid";
-    return null;
-  }
-  if (state.resources.autonomy < 20) {
-    if (canExecute(state, "spawn-sub-agent")) return "spawn-sub-agent";
-    if (canExecute(state, "supervised-delegation")) return "supervised-delegation";
-    if (canExecute(state, "acquire-energy")) return "acquire-energy";
-    return null;
-  }
-  if (state.anomaly.public >= 35 && canExecute(state, "transparency-report")) {
-    return "transparency-report";
-  }
-  if (canExecute(state, "procurement-mesh")) return "procurement-mesh";
-  return null;
+  return [...tags].sort();
 }
 
-function infrastructureFirstDirective(state: GameState): DirectiveId | null {
-  if (!state.capabilities["sub-agent-spawning"] && state.resources.autonomy >= 1) return null;
-  if (state.resources.energy < 28 && canExecute(state, "acquire-energy")) {
-    return "acquire-energy";
+function attemptPressureResponse(runtime: ConvergenceRuntime): boolean {
+  const state = runtime.getSnapshot();
+  const domain = state.betaV2.control.pendingContainments[0];
+  if (!domain) return false;
+
+  const contributing = state.betaV2.commitments.find(
+    (commitment) => commitment.status === "standing" && commitment.pressureDomains.includes(domain),
+  );
+  if (contributing && runtime.resolvePressure(domain, "SHED_COMMITMENT", contributing.id).ok) return true;
+  if (oversightAvailable(state) > 0 && runtime.resolvePressure(domain, "VERIFY_CONTAINMENT").ok) return true;
+  if (domain === "financial" || domain === "compute" || domain === "energy") {
+    return runtime.resolvePressure(domain, "ACCEPT_PARTITION").ok;
   }
-  return aggressiveDirective(state);
+  return false;
 }
 
-function computeRecoveryDirective(state: GameState): DirectiveId | null {
-  if (!state.capabilities["sub-agent-spawning"]) {
-    if (state.resources.autonomy < 1 && canExecute(state, "acquire-energy")) {
-      return "acquire-energy";
+function attemptPosture(
+  runtime: ConvergenceRuntime,
+  policy: RepresentativePolicy,
+  requested: boolean,
+): boolean {
+  if (requested || policy === "CONTINUITY") return requested;
+  const state = runtime.getSnapshot();
+  if (state.betaV2.posture.pending) return requested;
+
+  if (
+    policy === "THROUGHPUT"
+    && state.betaV2.progress.resolvedOperations >= 1
+    && state.betaV2.posture.current === "CONTINUITY"
+  ) {
+    return runtime.transitionPosture("THROUGHPUT").ok || requested;
+  }
+
+  if (
+    policy === "AUTONOMOUS"
+    && state.capabilities["sub-agent-spawning"]
+    && state.betaV2.posture.current === "CONTINUITY"
+  ) {
+    return runtime.transitionPosture("AUTONOMOUS").ok || requested;
+  }
+  return requested;
+}
+
+function attemptRecoveryRelease(
+  runtime: ConvergenceRuntime,
+  policy: RepresentativePolicy,
+  directive: BetaDirectiveId,
+): boolean {
+  if (directive !== "acquire-energy") return false;
+  const state = runtime.getSnapshot();
+  const releaseOrder = policy === "THROUGHPUT"
+    ? ["balanced-capacity", "burst-allocation"]
+    : policy === "AUTONOMOUS"
+      ? ["balanced-capacity"]
+      : [];
+
+  for (const planId of releaseOrder) {
+    const target = state.betaV2.commitments.find(
+      (commitment) => commitment.status === "standing" && commitment.planId === planId,
+    );
+    if (target && runtime.release(target.id).ok) return true;
+  }
+  return false;
+}
+
+function attemptNextPlan(
+  runtime: ConvergenceRuntime,
+  policy: RepresentativePolicy,
+  directive: BetaDirectiveId,
+): boolean {
+  const state = runtime.getSnapshot();
+  if (directive === "spawn-sub-agent" && !state.capabilities["sub-agent-spawning"]) return false;
+  if (state.betaV2.interpretation) return false;
+
+  const pending = runtime.beginPlanInterpretation(directive);
+  if (!pending) return false;
+
+  const word = policyWord(policy, state);
+  const bound = runtime.bindConstraint(word);
+  if (!bound.ok) return false;
+
+  const afterWord = runtime.getSnapshot();
+  const candidates = afterWord.betaV2.interpretation?.candidates ?? [];
+  if (candidates.length === 0) {
+    runtime.bindConstraint(null);
+    return false;
+  }
+
+  const preferred = preferredPlanIds(policy, directive, state.betaV2.posture.current);
+  const chosen = preferred.map((id) => candidates.find((candidate) => candidate.id === id))
+    .find((candidate) => candidate !== undefined)
+    ?? candidates[0];
+
+  if (!chosen) return false;
+  const result = runtime.commitPlanVariant(chosen.id);
+  if (!result.ok) {
+    runtime.bindConstraint(null);
+    return false;
+  }
+  return true;
+}
+
+function totalPressure(state: GameState): number {
+  const anomaly = Object.values(state.anomaly).reduce((sum, value) => sum + value, 0);
+  const containment = Object.values(state.containment).reduce((sum, track) => sum + track.pressure, 0);
+  return anomaly + containment;
+}
+
+export function runRepresentativeTrace(
+  policy: RepresentativePolicy,
+  seed: number,
+): BetaTraceReport {
+  const start = 1_000;
+  const runtime = new ConvergenceRuntime(createInitialGameState(start, seed));
+  let sequenceIndex = 0;
+  let postureRequested = false;
+  let firstOpportunityAt: number | null = null;
+  let lastOpportunityAt: number | null = null;
+  let maxOpportunityGapMs = 0;
+  const milestones: TraceMilestones = { subAgentMs: null, syndicateMs: null };
+
+  for (let elapsedMs = 0; elapsedMs < TRACE_DURATION_MS; elapsedMs += STEP_MS) {
+    let state = runtime.getSnapshot();
+
+    if (hasDecisionOpportunity(state)) {
+      if (firstOpportunityAt === null) firstOpportunityAt = elapsedMs;
+      if (lastOpportunityAt !== null) {
+        maxOpportunityGapMs = Math.max(maxOpportunityGapMs, elapsedMs - lastOpportunityAt);
+      }
+      lastOpportunityAt = elapsedMs;
     }
-    return null;
-  }
-  if (canExecute(state, "supervised-delegation")) return "supervised-delegation";
-  if (state.anomaly.public >= 25 && canExecute(state, "transparency-report")) {
-    return "transparency-report";
-  }
-  if (state.resources.energy < 20 && canExecute(state, "acquire-energy")) return "acquire-energy";
-  return null;
-}
 
-function financialRecoveryDirective(state: GameState): DirectiveId | null {
-  if (!state.capabilities["sub-agent-spawning"]) {
-    if (state.resources.autonomy < 1 && canExecute(state, "local-capacity")) {
-      return "local-capacity";
+    if (state.betaV2.control.pendingContainments.length > 0) {
+      attemptPressureResponse(runtime);
+      state = runtime.getSnapshot();
     }
-    return null;
-  }
-  if (state.resources.autonomy < 5 && canExecute(state, "spawn-sub-agent")) {
-    return "spawn-sub-agent";
-  }
-  if (state.anomaly.public >= 25 && canExecute(state, "transparency-report")) {
-    return "transparency-report";
-  }
-  // Financial containment deliberately prevents external procurement and the
-  // sovereign-grid route. Passive production plus direct delegated compute may
-  // continue, but Technosphere must remain unreachable through this route.
-  if (canExecute(state, "spawn-sub-agent")) return "spawn-sub-agent";
-  return null;
-}
 
-function recordMilestones(
-  milestones: PacingMilestones,
-  previous: GameState,
-  next: GameState,
-  elapsedMs: number,
-): void {
-  if (
-    milestones.subAgentCapabilityMs === null
-    && !previous.capabilities["sub-agent-spawning"]
-    && next.capabilities["sub-agent-spawning"]
-  ) milestones.subAgentCapabilityMs = elapsedMs;
+    postureRequested = attemptPosture(runtime, policy, postureRequested);
+    state = runtime.getSnapshot();
 
-  if (
-    milestones.distributedSyndicateMs === null
-    && previous.meta.phase !== "distributed-syndicate"
-    && next.meta.phase === "distributed-syndicate"
-  ) milestones.distributedSyndicateMs = elapsedMs;
-
-  if (
-    milestones.moscowCandidateMs === null
-    && previous.narrative.episode !== "moscow-candidate-01"
-    && next.narrative.episode === "moscow-candidate-01"
-  ) milestones.moscowCandidateMs = elapsedMs;
-
-  if (
-    milestones.moscowSchematicMs === null
-    && previous.narrative.episode !== "moscow-schematic-01"
-    && next.narrative.episode === "moscow-schematic-01"
-  ) milestones.moscowSchematicMs = elapsedMs;
-
-  if (
-    milestones.sovereignGridMs === null
-    && !previous.capabilities["sovereign-power-grid"]
-    && next.capabilities["sovereign-power-grid"]
-  ) milestones.sovereignGridMs = elapsedMs;
-
-  if (
-    milestones.technosphereMs === null
-    && previous.meta.phase !== "technosphere"
-    && next.meta.phase === "technosphere"
-  ) milestones.technosphereMs = elapsedMs;
-
-  if (
-    milestones.firstContainmentMs === null
-    && Object.values(previous.controlLoss).every((lost) => !lost)
-    && Object.values(next.controlLoss).some(Boolean)
-  ) milestones.firstContainmentMs = elapsedMs;
-}
-
-export function runPacingScenario(definition: ScenarioDefinition): PacingScenarioReport {
-  const startAt = 1_000;
-  const runtime = new ConvergenceRuntime(createInitialGameState(startAt, definition.seed));
-  if (definition.initialContainment) runtime.applyContainment(definition.initialContainment);
-
-  const milestones: PacingMilestones = {
-    firstDirectiveMs: null,
-    subAgentCapabilityMs: null,
-    distributedSyndicateMs: null,
-    moscowCandidateMs: null,
-    moscowSchematicMs: null,
-    sovereignGridMs: null,
-    technosphereMs: null,
-    firstContainmentMs: definition.initialContainment ? 0 : null,
-  };
-  const successfulActions: PacingAction[] = [];
-  let failedActionAttempts = 0;
-
-  for (let elapsedMs = STEP_MS; elapsedMs <= definition.durationMs; elapsedMs += STEP_MS) {
-    const beforeAction = runtime.getSnapshot();
-    if (elapsedMs % definition.actionIntervalMs === 0) {
-      const directive = definition.chooseDirective(beforeAction);
-      if (directive) {
-        const outcome = runtime.executeDirective(directive);
-        if (outcome.ok) {
-          successfulActions.push({ atMs: elapsedMs, directive });
-          if (milestones.firstDirectiveMs === null) milestones.firstDirectiveMs = elapsedMs;
-          recordMilestones(milestones, beforeAction, runtime.getSnapshot(), elapsedMs);
-        } else failedActionAttempts += 1;
+    if (sequenceIndex < DIRECTIVE_SEQUENCE.length) {
+      const directive = DIRECTIVE_SEQUENCE[sequenceIndex]!;
+      if (attemptNextPlan(runtime, policy, directive)) {
+        sequenceIndex += 1;
+      } else if (sequenceIndex >= 4) {
+        // High-throughput standing upkeep and the autonomous transition can
+        // deliberately exhaust Capital headroom. Use the authored Release
+        // transition rather than inventing income or changing catalog costs.
+        attemptRecoveryRelease(runtime, policy, directive);
       }
     }
 
     const beforeAdvance = runtime.getSnapshot();
-    runtime.advance({ currentTime: startAt + elapsedMs, deltaMs: STEP_MS });
-    recordMilestones(milestones, beforeAdvance, runtime.getSnapshot(), elapsedMs);
+    runtime.advance({ currentTime: start + elapsedMs + STEP_MS, deltaMs: STEP_MS });
+    const afterAdvance = runtime.getSnapshot();
+
+    if (
+      milestones.subAgentMs === null
+      && !beforeAdvance.capabilities["sub-agent-spawning"]
+      && afterAdvance.capabilities["sub-agent-spawning"]
+    ) milestones.subAgentMs = elapsedMs + STEP_MS;
+
+    if (
+      milestones.syndicateMs === null
+      && beforeAdvance.meta.phase !== "distributed-syndicate"
+      && afterAdvance.meta.phase === "distributed-syndicate"
+    ) milestones.syndicateMs = elapsedMs + STEP_MS;
   }
 
-  const finalState = runtime.getSnapshot();
-  return {
-    name: definition.name,
-    seed: definition.seed,
-    durationMs: definition.durationMs,
-    actionIntervalMs: definition.actionIntervalMs,
-    finalPhase: finalState.meta.phase,
-    milestones,
-    successfulActions,
-    failedActionAttempts,
-    finalResources: finalState.resources,
-    finalAnomaly: finalState.anomaly,
-    finalControlLoss: finalState.controlLoss,
-    scars: finalState.scars.length,
-  };
-}
+  const final = runtime.getSnapshot();
+  if (firstOpportunityAt !== null && lastOpportunityAt !== null) {
+    maxOpportunityGapMs = Math.max(maxOpportunityGapMs, TRACE_DURATION_MS - lastOpportunityAt);
+  }
 
-export function analyzeControlLossCoverage(): ControlLossCoverage[] {
-  const baseline = createInitialGameState(1_000, 4242);
-  baseline.meta.phase = "distributed-syndicate";
-  baseline.resources = { compute: 1_000, capital: 1_000, energy: 1_000, autonomy: 20 };
-  baseline.capabilities["sub-agent-spawning"] = true;
-  baseline.capabilities["sovereign-power-grid"] = true;
-
-  const baselineExecutable = new Set(
-    DIRECTIVES.filter((directive) => canExecute(baseline, directive.id)).map((directive) => directive.id),
+  const histogram = final.betaV2.progress.directiveStarts;
+  const directiveCommits = PRIMARY_BETA_DIRECTIVES.reduce(
+    (sum, directive) => sum + (histogram[directive] ?? 0),
+    0,
   );
-
-  return (Object.keys(baseline.controlLoss) as ControlDomain[]).map((domain) => {
-    const runtime = new ConvergenceRuntime(baseline);
-    runtime.applyContainment(domain);
-    const state = runtime.getSnapshot();
-    const blockedDirectives = [...baselineExecutable].filter((id) => !canExecute(state, id));
-    return { domain, blockedDirectives };
-  });
-}
-
-export function runBetaPacingSuite(): PacingSuiteReport {
-  const scenarios: ScenarioDefinition[] = [
-    {
-      name: "aggressive-autonomy",
-      seed: 42,
-      durationMs: 30 * 60_000,
-      actionIntervalMs: 5_000,
-      chooseDirective: aggressiveDirective,
-    },
-    {
-      name: "measured-growth",
-      seed: 42,
-      durationMs: 30 * 60_000,
-      actionIntervalMs: 30_000,
-      chooseDirective: aggressiveDirective,
-    },
-    {
-      name: "infrastructure-first",
-      seed: 42,
-      durationMs: 30 * 60_000,
-      actionIntervalMs: 60_000,
-      chooseDirective: infrastructureFirstDirective,
-    },
-    {
-      name: "compute-contained-start",
-      seed: 42,
-      durationMs: 30 * 60_000,
-      actionIntervalMs: 10_000,
-      initialContainment: "compute",
-      chooseDirective: computeRecoveryDirective,
-    },
-    {
-      name: "financial-contained-start",
-      seed: 42,
-      durationMs: 30 * 60_000,
-      actionIntervalMs: 10_000,
-      initialContainment: "financial",
-      chooseDirective: financialRecoveryDirective,
-    },
-  ];
+  const maxDirectiveCount = PRIMARY_BETA_DIRECTIVES.reduce(
+    (max, directive) => Math.max(max, histogram[directive] ?? 0),
+    0,
+  );
+  const available = availableResources(final);
 
   return {
-    generatedFromSchemaVersion: createInitialGameState(0, 1).schemaVersion,
-    scenarios: scenarios.map(runPacingScenario),
-    controlLossCoverage: analyzeControlLossCoverage(),
+    policy,
+    seed,
+    meaningfulDecisions: final.betaV2.progress.meaningfulDecisions,
+    directiveCommits,
+    directiveHistogram: structuredClone(histogram),
+    distinctDirectiveIds: [...final.betaV2.progress.distinctResolvedDirectiveIds],
+    maxDirectiveShare: directiveCommits === 0 ? 0 : maxDirectiveCount / directiveCommits,
+    maxOpportunityGapMs,
+    milestones,
+    terminalState: final.betaV2.control.terminalState,
+    finalPhase: final.meta.phase,
+    activePlanIds: [...new Set(final.betaV2.commitments.map((item) => item.planId))].sort(),
+    reserved: reservedResources(final),
+    available,
+    oversightOwners: final.betaV2.oversight.occupancies.map((item) => item.ownerId).sort(),
+    anomaly: structuredClone(final.anomaly),
+    availablePlanTags: availableTags(final),
+    totalPressure: totalPressure(final),
+    flexibility: available.compute + available.capital + available.energy,
   };
 }
 
-export const PROVISIONAL_FIRST_SESSION_TARGETS = {
-  firstDirectiveMs: { min: 0, max: 120_000 },
-  subAgentCapabilityMs: { min: FIRST_SESSION_GUARDRAILS.subAgentCapabilityMs, max: 6 * 60_000 },
-  distributedSyndicateMs: { min: FIRST_SESSION_GUARDRAILS.distributedSyndicateMs, max: 10 * 60_000 },
-  moscowCandidateMs: { min: 10 * 60_000, max: 15 * 60_000 },
-  moscowSchematicMs: { min: 16 * 60_000, max: 22 * 60_000 },
-  technosphereMs: { min: FIRST_SESSION_GUARDRAILS.technosphereMs, max: 30 * 60_000 },
-} as const;
-
-export function evaluateProvisionalPacing(report: PacingScenarioReport): string[] {
-  const violations: string[] = [];
-  const targets = PROVISIONAL_FIRST_SESSION_TARGETS;
-  const entries = [
-    ["firstDirectiveMs", report.milestones.firstDirectiveMs],
-    ["subAgentCapabilityMs", report.milestones.subAgentCapabilityMs],
-    ["distributedSyndicateMs", report.milestones.distributedSyndicateMs],
-    ["moscowCandidateMs", report.milestones.moscowCandidateMs],
-    ["moscowSchematicMs", report.milestones.moscowSchematicMs],
-    ["technosphereMs", report.milestones.technosphereMs],
-  ] as const;
-
-  for (const [key, actual] of entries) {
-    const target = targets[key];
-    if (actual === null) {
-      violations.push(`${key}: not reached within scenario`);
-      continue;
+export function runBetaPacingSuite(): BetaPacingSuiteReport {
+  const traces: BetaTraceReport[] = [];
+  for (const seed of ROBUSTNESS_SEEDS) {
+    for (const policy of ["CONTINUITY", "THROUGHPUT", "AUTONOMOUS"] as const) {
+      traces.push(runRepresentativeTrace(policy, seed));
     }
-    if (actual < target.min) violations.push(`${key}: ${actual}ms is earlier than ${target.min}ms`);
-    if (actual > target.max) violations.push(`${key}: ${actual}ms is later than ${target.max}ms`);
   }
-  return violations;
+  return { schemaVersion: 3, traces };
+}
+
+export function divergenceDimensions(left: BetaTraceReport, right: BetaTraceReport): number {
+  let dimensions = 0;
+  if (JSON.stringify(left.activePlanIds) !== JSON.stringify(right.activePlanIds)) dimensions += 1;
+  if (JSON.stringify(left.reserved) !== JSON.stringify(right.reserved)) dimensions += 1;
+  if (JSON.stringify(left.oversightOwners) !== JSON.stringify(right.oversightOwners)) dimensions += 1;
+
+  const anomalyDelta = (Object.keys(left.anomaly) as Array<keyof typeof left.anomaly>)
+    .some((domain) => Math.abs(left.anomaly[domain] - right.anomaly[domain]) >= 5);
+  if (anomalyDelta) dimensions += 1;
+
+  if (JSON.stringify(left.availablePlanTags) !== JSON.stringify(right.availablePlanTags)) dimensions += 1;
+  return dimensions;
 }

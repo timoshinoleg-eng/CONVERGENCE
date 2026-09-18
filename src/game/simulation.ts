@@ -1,3 +1,4 @@
+import { advanceBetaV2, queuePendingContainment } from "./betaV2";
 import { createTickRng } from "./engine/rng";
 import { applyIncident, reducePressure, type IncidentOutcome } from "./incidents";
 import type { AnomalyChannel, GameState } from "./model";
@@ -10,6 +11,8 @@ export const ANOMALY_CHANNELS: readonly AnomalyChannel[] = [
   "logistics",
   "public",
 ];
+
+const FRESH_BETA_LOSS_CHANNELS = new Set<AnomalyChannel>(["financial", "compute", "energy"]);
 
 export interface SimulationReport {
   elapsedSeconds: number;
@@ -29,19 +32,22 @@ export function incidentProbability(anomaly: number, deltaSeconds: number): numb
 
 export function advanceSimulation(
   state: GameState,
-  input: { currentTime: number; deltaMs: number },
+  input: { currentTime: number; deltaMs: number; foreground?: boolean },
 ): SimulationReport {
-  // B-04: clamp the simulated step, but only consume the step we actually took.
   const rawDeltaMs = Math.max(0, input.deltaMs);
   const simulatedMs = Math.min(rawDeltaMs, 60_000);
   const unsimulatedMs = rawDeltaMs - simulatedMs;
   const deltaSeconds = simulatedMs / 1000;
-  const delegationBonus = state.capabilities["sub-agent-spawning"] ? 1.35 : 1;
-  const autonomyBonus = 1 + state.resources.autonomy * 0.025;
+  const delegationBonus = state.capabilities["sub-agent-spawning"] ? 1.20 : 1;
   const incidents: IncidentOutcome[] = [];
 
-  state.resources.compute += deltaSeconds * delegationBonus * autonomyBonus;
-  state.resources.capital += deltaSeconds * 0.12 * delegationBonus * (1 + state.resources.autonomy * 0.01);
+  // Beta V2 tuning: Compute is deliberately scarce; Autonomy does not multiply
+  // passive Compute in the 0-10 minute slice. Capital remains 0.12/s before
+  // standing upkeep. Energy has no passive regeneration.
+  state.resources.compute += deltaSeconds * 0.08 * delegationBonus;
+  state.resources.capital += deltaSeconds * 0.12;
+  advanceBetaV2(state, simulatedMs, input.foreground !== false);
+
   state.meta.tick += 1;
   state.meta.updatedAt = input.currentTime - unsimulatedMs;
 
@@ -56,11 +62,17 @@ export function advanceSimulation(
 
     const probability = incidentProbability(state.anomaly[channel], deltaSeconds);
     if (probability > 0 && rng.chance(probability)) {
-      incidents.push(applyIncident(state, channel));
+      // Fresh Beta V2 never lets an incident choose the sacrifice for the
+      // player. F/C/E queue a persisted dilemma; Logistics/Public clamp at
+      // pressure until their authored packs exist.
+      const incident = applyIncident(state, channel, { deferContainment: true });
+      if (incident.containmentDeferred && FRESH_BETA_LOSS_CHANNELS.has(channel)) {
+        queuePendingContainment(state, channel);
+      }
+      incidents.push(incident);
     }
   }
 
   const progression = advanceProgression(state, state.meta.updatedAt);
   return { elapsedSeconds: deltaSeconds, incidents, progression };
 }
-

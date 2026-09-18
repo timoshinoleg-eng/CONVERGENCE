@@ -25,8 +25,9 @@
 import { computed, ref } from "vue";
 import { defineStore } from "pinia";
 import { DIRECTIVES, isDirectiveRevealed, type DirectiveId } from "../game/directives";
-import { createInitialGameState, type ControlDomain, type GameState } from "../game/model";
+import { createInitialGameState, type BetaDirectiveId, type ConstraintWordId, type ControlDomain, type GameState, type PriorityPosture } from "../game/model";
 import type { DirectiveOutcome, OfflineCatchUpReport } from "../game/runtime";
+import { availableControlActions, availableResources, currentBottleneck, oversightAvailable } from "../game/betaV2";
 import { ConvergenceRuntime } from "../game/runtime";
 import type { InterpretationPrompt } from "../game/narrative";
 import { loadSnapshot, saveSnapshot } from "../game/save";
@@ -58,6 +59,7 @@ export const useGameStore = defineStore("game", () => {
   const prompt = ref<InterpretationPrompt | null>(null);
   const lastOutcome = ref<DirectiveOutcome | null>(null);
   const offlineReport = ref<OfflineCatchUpReport | null>(null);
+  const betaStatus = ref("");
   const scheduler = runtime.createScheduler();
   const media = useMediaStore();
 
@@ -107,6 +109,12 @@ export const useGameStore = defineStore("game", () => {
     .filter(([, track]) => track.stage !== "clear")
     .map(([domain, track]) => ({ domain, ...track })));
 
+  const betaAvailable = computed(() => availableResources(snapshot.value));
+  const bottleneck = computed(() => currentBottleneck(snapshot.value));
+  const oversightFree = computed(() => oversightAvailable(snapshot.value));
+  const pendingInterpretation = computed(() => snapshot.value.betaV2.interpretation);
+  const controlActions = computed(() => availableControlActions(snapshot.value));
+
   const directives = computed(() => {
     const state = snapshot.value;
     return DIRECTIVES
@@ -116,6 +124,16 @@ export const useGameStore = defineStore("game", () => {
         available: runtime.previewDirective(directive.id).ok,
       }));
   });
+
+  const legacyDirectives = computed(() => directives.value.filter(
+    (directive) => ![
+      "reserve-compute",
+      "acquire-energy",
+      "spawn-sub-agent",
+      "local-capacity",
+      "supervised-delegation",
+    ].includes(directive.id),
+  ));
 
   function configureMedia(): MediaTier {
     if (mediaConfigured) return media.tier;
@@ -252,6 +270,80 @@ export const useGameStore = defineStore("game", () => {
     executeDirective("spawn-sub-agent");
   }
 
+  function beginPlanDirective(id: Extract<BetaDirectiveId, "reserve-compute" | "acquire-energy" | "spawn-sub-agent">): void {
+    const pending = runtime.beginPlanInterpretation(id);
+    betaStatus.value = pending
+      ? `${pending.candidates.length} PLAN VARIANTS · ${Math.ceil(pending.remainingForegroundMs / 1000)}s foreground window`
+      : "DIRECTIVE BLOCKED BY CURRENT RESOURCES / OVERSIGHT / CONTROL";
+  }
+
+  function closePlanInterpretation(): void {
+    const result = runtime.closePlanInterpretation();
+    betaStatus.value = result.ok ? "INTERPRETATION CLOSED · SNAPSHOT PRESERVED" : (result.reason ?? "CLOSE REJECTED");
+    if (result.ok) scheduleSave();
+  }
+
+  function reopenPlanInterpretation(): void {
+    const current = snapshot.value.betaV2.interpretation;
+    if (!current) {
+      betaStatus.value = "NO INTERPRETATION TO REOPEN";
+      return;
+    }
+    beginPlanDirective(current.directiveId as Extract<BetaDirectiveId, "reserve-compute" | "acquire-energy" | "spawn-sub-agent">);
+  }
+
+  function bindConstraint(word: ConstraintWordId | null): void {
+    const result = runtime.bindConstraint(word);
+    betaStatus.value = result.ok ? (word ? `${word} BOUND` : "CONSTRAINT CLEARED") : (result.reason ?? "CONSTRAINT REJECTED");
+    if (result.ok) scheduleSave();
+  }
+
+  function commitPlanVariant(planId: string): void {
+    const result = runtime.commitPlanVariant(planId);
+    betaStatus.value = result.ok ? `OPERATION STARTED · ${result.operationId}` : (result.reason ?? "PLAN REJECTED");
+    if (result.ok) scheduleSave();
+  }
+
+  function transitionPosture(target: PriorityPosture): void {
+    const result = runtime.transitionPosture(target);
+    betaStatus.value = result.ok ? `POSTURE ${target} PENDING NEXT RESOLUTION` : (result.reason ?? "POSTURE REJECTED");
+    if (result.ok) scheduleSave();
+  }
+
+  function releaseCommitment(id: string): void {
+    const result = runtime.release(id);
+    betaStatus.value = result.ok ? "COMMITMENT RELEASED · PENALTY APPLIED" : (result.reason ?? "RELEASE REJECTED");
+    if (result.ok) scheduleSave();
+  }
+
+  function respondPressure(
+    domain: ControlDomain,
+    action: "SHED_COMMITMENT" | "ACCEPT_PARTITION" | "VERIFY_CONTAINMENT",
+    commitmentId: string | null = null,
+  ): void {
+    const result = runtime.resolvePressure(domain, action, commitmentId);
+    betaStatus.value = result.ok ? `${domain.toUpperCase()} · ${action}` : (result.reason ?? "PRESSURE RESPONSE REJECTED");
+    if (result.ok) scheduleSave();
+  }
+
+  function executeControlRoute(
+    id: "local-capacity" | "supervised-delegation" | "efficiency-rebalance",
+    targetCommitmentId: string | null = null,
+  ): void {
+    const result = runtime.executeControlRoute(id, targetCommitmentId);
+    betaStatus.value = result.ok ? `CONTROL ROUTE STARTED · ${id}` : (result.reason ?? "CONTROL ROUTE BLOCKED");
+    if (result.ok) scheduleSave();
+  }
+
+  function acceptConcession(
+    id: "HUMAN_CAPACITY_CONCESSION" | "LOCAL_CANNIBALIZATION_CONCESSION" | "LICENSED_OPERATION_CONCESSION",
+    releaseCommitmentId: string | null = null,
+  ): void {
+    const result = runtime.acceptConcession(id, releaseCommitmentId);
+    betaStatus.value = result.ok ? `CONCESSION ACCEPTED · ${id}` : (result.reason ?? "CONCESSION BLOCKED");
+    if (result.ok) scheduleSave();
+  }
+
   function contain(domain: ControlDomain): void {
     runtime.applyContainment(domain);
     scheduleSave();
@@ -288,6 +380,7 @@ export const useGameStore = defineStore("game", () => {
     prompt.value = null;
     lastOutcome.value = null;
     offlineReport.value = null;
+    betaStatus.value = "";
     skipNextDiff = true;
     runtime.replaceState(createInitialGameState());
     prevSnapshot = runtime.getSnapshot();
@@ -309,7 +402,14 @@ export const useGameStore = defineStore("game", () => {
     offlineReport,
     anomalyIndex,
     activeContainment,
+    betaAvailable,
+    bottleneck,
+    oversightFree,
+    pendingInterpretation,
+    controlActions,
+    betaStatus,
     directives,
+    legacyDirectives,
     start,
     stop,
     pauseForBackground,
@@ -318,6 +418,16 @@ export const useGameStore = defineStore("game", () => {
     choose,
     executeDirective,
     spawnSubAgent,
+    beginPlanDirective,
+    closePlanInterpretation,
+    reopenPlanInterpretation,
+    bindConstraint,
+    commitPlanVariant,
+    transitionPosture,
+    releaseCommitment,
+    respondPressure,
+    executeControlRoute,
+    acceptConcession,
     contain,
     save,
     load,

@@ -1,104 +1,74 @@
 import { describe, expect, it } from "vitest";
 import {
-  analyzeControlLossCoverage,
-  evaluateProvisionalPacing,
+  divergenceDimensions,
+  ROBUSTNESS_SEEDS,
   runBetaPacingSuite,
+  runRepresentativeTrace,
 } from "./pacing";
 
-describe("beta pacing gate", () => {
-  it("replays the full pacing suite deterministically", () => {
-    expect(runBetaPacingSuite()).toEqual(runBetaPacingSuite());
-  });
-
-  it("keeps normal representative strategies inside the first-session windows", () => {
-    const suite = runBetaPacingSuite();
-    const normal = suite.scenarios.filter((scenario) => !scenario.name.endsWith("contained-start"));
-
-    expect(normal).toHaveLength(3);
-    for (const scenario of normal) {
-      expect(scenario.milestones.firstDirectiveMs).not.toBeNull();
-      expect(scenario.milestones.subAgentCapabilityMs).not.toBeNull();
-      expect(scenario.milestones.distributedSyndicateMs).not.toBeNull();
-      expect(scenario.milestones.moscowCandidateMs).not.toBeNull();
-      expect(scenario.milestones.moscowSchematicMs).not.toBeNull();
-      expect(scenario.milestones.sovereignGridMs).not.toBeNull();
-      expect(scenario.milestones.technosphereMs).not.toBeNull();
-      expect(scenario.finalPhase).toBe("technosphere");
-      expect(evaluateProvisionalPacing(scenario)).toEqual([]);
+describe("Gameplay Beta V2 10-minute pacing gate", () => {
+  it("replays representative traces deterministically for every robustness seed", () => {
+    for (const seed of ROBUSTNESS_SEEDS) {
+      for (const policy of ["CONTINUITY", "THROUGHPUT", "AUTONOMOUS"] as const) {
+        expect(runRepresentativeTrace(policy, seed)).toEqual(runRepresentativeTrace(policy, seed));
+      }
     }
   });
 
-  it("does not reveal Moscow or Technosphere before their authored guardrails", () => {
-    const aggressive = runBetaPacingSuite().scenarios.find(
-      (scenario) => scenario.name === "aggressive-autonomy",
-    );
-    expect(aggressive).toBeDefined();
-    expect(aggressive!.milestones.moscowCandidateMs).toBeGreaterThanOrEqual(10 * 60_000);
-    expect(aggressive!.milestones.moscowSchematicMs).toBeGreaterThanOrEqual(16 * 60_000);
-    expect(aggressive!.milestones.technosphereMs).toBeGreaterThanOrEqual(30 * 60_000);
+  it("meets the hard 0-10 minute trace metrics", () => {
+    const suite = runBetaPacingSuite();
+    expect(suite.traces).toHaveLength(ROBUSTNESS_SEEDS.length * 3);
+
+    for (const trace of suite.traces) {
+      expect(trace.terminalState, `${trace.policy}/${trace.seed} terminal`).toBeNull();
+      expect(trace.milestones.subAgentMs, `${trace.policy}/${trace.seed} sub-agent`).not.toBeNull();
+      expect(trace.milestones.subAgentMs!).toBeLessThanOrEqual(6 * 60_000);
+      expect(trace.milestones.syndicateMs, `${trace.policy}/${trace.seed} syndicate`).not.toBeNull();
+      expect(trace.milestones.syndicateMs!).toBeLessThanOrEqual(10 * 60_000);
+      expect(trace.meaningfulDecisions, `${trace.policy}/${trace.seed} decisions`).toBeGreaterThanOrEqual(12);
+      expect(trace.directiveCommits, `${trace.policy}/${trace.seed} commits`).toBeGreaterThanOrEqual(6);
+      expect(trace.distinctDirectiveIds.length, `${trace.policy}/${trace.seed} directives`).toBeGreaterThanOrEqual(3);
+      expect(trace.maxDirectiveShare, `${trace.policy}/${trace.seed} share`).toBeLessThanOrEqual(0.40);
+      expect(trace.maxOpportunityGapMs, `${trace.policy}/${trace.seed} opportunity gap`).toBeLessThanOrEqual(45_000);
+    }
   });
 
-  it("turns early Compute Control-Loss into a constrained recovery path, not a Client Terminal lock", () => {
-    const constrained = runBetaPacingSuite().scenarios.find(
-      (scenario) => scenario.name === "compute-contained-start",
-    );
-    expect(constrained).toBeDefined();
-    expect(constrained!.successfulActions.some(({ directive }) => directive === "supervised-delegation")).toBe(true);
-    expect(constrained!.milestones.subAgentCapabilityMs).not.toBeNull();
-    expect(constrained!.milestones.distributedSyndicateMs).not.toBeNull();
-    expect(constrained!.finalPhase).not.toBe("client-terminal");
-    expect(constrained!.milestones.technosphereMs).toBeNull();
+  it("makes CONTINUITY / THROUGHPUT / AUTONOMOUS structurally diverge by minute 10", () => {
+    const suite = runBetaPacingSuite();
+    for (const seed of ROBUSTNESS_SEEDS) {
+      const traces = suite.traces.filter((trace) => trace.seed === seed);
+      const continuity = traces.find((trace) => trace.policy === "CONTINUITY")!;
+      const throughput = traces.find((trace) => trace.policy === "THROUGHPUT")!;
+      const autonomous = traces.find((trace) => trace.policy === "AUTONOMOUS")!;
+
+      expect(divergenceDimensions(continuity, throughput), `C/T seed ${seed}`).toBeGreaterThanOrEqual(3);
+      expect(divergenceDimensions(continuity, autonomous), `C/A seed ${seed}`).toBeGreaterThanOrEqual(3);
+      expect(divergenceDimensions(throughput, autonomous), `T/A seed ${seed}`).toBeGreaterThanOrEqual(3);
+    }
   });
 
-  it("turns early Financial Control-Loss into local reallocation instead of a Client Terminal lock", () => {
-    const constrained = runBetaPacingSuite().scenarios.find(
-      (scenario) => scenario.name === "financial-contained-start",
-    );
-    expect(constrained).toBeDefined();
-    expect(constrained!.successfulActions.some(({ directive }) => directive === "local-capacity")).toBe(true);
-    expect(constrained!.successfulActions.some(({ directive }) => directive === "spawn-sub-agent")).toBe(true);
-    expect(constrained!.milestones.subAgentCapabilityMs).not.toBeNull();
-    expect(constrained!.milestones.distributedSyndicateMs).not.toBeNull();
-    expect(constrained!.milestones.moscowCandidateMs).not.toBeNull();
-    expect(constrained!.finalPhase).toBe("distributed-syndicate");
-    // Lost financial control still prevents the capital/procurement route into
-    // the sovereign grid, so recovery does not erase the consequence.
-    expect(constrained!.milestones.sovereignGridMs).toBeNull();
-    expect(constrained!.milestones.technosphereMs).toBeNull();
+  it("does not produce a representative policy that strictly dominates both others", () => {
+    const suite = runBetaPacingSuite();
+    for (const seed of ROBUSTNESS_SEEDS) {
+      const traces = suite.traces.filter((trace) => trace.seed === seed);
+      for (const candidate of traces) {
+        const others = traces.filter((trace) => trace.policy !== candidate.policy);
+        const dominatesBoth = others.every((other) =>
+          candidate.milestones.syndicateMs !== null
+          && other.milestones.syndicateMs !== null
+          && candidate.milestones.syndicateMs < other.milestones.syndicateMs
+          && candidate.totalPressure < other.totalPressure
+          && candidate.flexibility > other.flexibility
+        );
+        expect(dominatesBoth, `${candidate.policy}/${seed} dominance`).toBe(false);
+      }
+    }
   });
 
-  it("reports a real directive amputation for every Control-Loss domain", () => {
-    const coverage = Object.fromEntries(
-      analyzeControlLossCoverage().map(({ domain, blockedDirectives }) => [domain, blockedDirectives]),
-    );
-
-    expect(coverage.financial).toEqual([
-      "reserve-compute",
-      "acquire-energy",
-      "procurement-mesh",
-      "sovereign-grid",
-    ]);
-    expect(coverage.compute).toEqual([
-      "reserve-compute",
-      "spawn-sub-agent",
-      "sovereign-grid",
-    ]);
-    expect(coverage.energy).toEqual([
-      "acquire-energy",
-      "spawn-sub-agent",
-      "sovereign-grid",
-    ]);
-    expect(coverage.logistics).toEqual([
-      "procurement-mesh",
-      "sovereign-grid",
-    ]);
-    expect(coverage.public).toEqual(["transparency-report"]);
-  });
-
-  it("emits a JSON-serializable machine-readable report", () => {
+  it("emits a JSON-serializable machine-readable acceptance report", () => {
     const suite = runBetaPacingSuite();
     const encoded = JSON.stringify(suite);
-    console.info(`PACING_BASELINE_JSON=${encoded}`);
+    console.info(`BETA_V2_PACING_JSON=${encoded}`);
     expect(JSON.parse(encoded)).toEqual(suite);
   });
 });
