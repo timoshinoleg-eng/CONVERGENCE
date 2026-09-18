@@ -1087,6 +1087,30 @@ If such a migrated combination yields zero executable route and no active commit
 
 Do not invent a hidden restoration path.
 
+### 14.8 Post-loss normalization
+
+The existence of a route in content data is not sufficient.
+
+Immediately after any Control-Loss transform, and again after any Concession/Release that changes route affordability, production must normalize the state.
+
+Normalization must produce at least one of:
+
+A. an immediately executable distinct indirect route;
+
+B. an immediately executable RELEASE/restructure action that makes an authored route executable without passive waiting;
+
+C. an explicit terminal state.
+
+An unaffordable route shown beside an empty action set is a softlock and fails this specification.
+
+For single-domain loss, the authored indirect route remains the preferred continuation. If its cost cannot be paid and no existing commitment can be Released/restructured to make it payable immediately, enter CONTROL_SURFACE_COLLAPSE.
+
+For pair loss, apply the same rule to the pair-specific Concession.
+
+For F+C+E, use the ISOLATED_STASIS rule in section 14.6.
+
+CONTROL_SURFACE_COLLAPSE and ISOLATED_STASIS are not emergency recovery buttons. They are explicit authored end states and never restore a lost domain.
+
 ## 15. Progression
 
 Every progression milestone requires BOTH state achievement and a minimum-time floor.
