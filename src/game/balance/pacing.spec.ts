@@ -54,8 +54,9 @@ describe("Gameplay Beta V2 10-minute pacing gate", () => {
       for (const candidate of traces) {
         const others = traces.filter((trace) => trace.policy !== candidate.policy);
         const dominatesBoth = others.every((other) =>
-          candidate.finalPhase === "distributed-syndicate"
-          && other.finalPhase !== "technosphere"
+          candidate.milestones.syndicateMs !== null
+          && other.milestones.syndicateMs !== null
+          && candidate.milestones.syndicateMs < other.milestones.syndicateMs
           && candidate.totalPressure < other.totalPressure
           && candidate.flexibility > other.flexibility
         );
