@@ -1,513 +1,1811 @@
-# CONVERGENCE — Gameplay Beta V2 Specification
+# CONVERGENCE — GAMEPLAY BETA V2 SPEC
 
-Status: lead-authoritative draft for implementation planning.
-Base product: Telegram-first, mobile-first, deterministic, offline-capable.
-This document supersedes the current dashboard-heavy first-session interaction model for the Beta V2 vertical slice. It does not authorize a broad rewrite of the simulation.
+Status: AUTHORITATIVE DESIGN CANDIDATE — requires product approval before production gameplay implementation.
 
-## 1. Product thesis
+Design base: main at 6fafb6ad80c2657b38c8472aa8b49fe1af6c8d7d.
 
-The Beta V2 slice must turn CONVERGENCE from a resource dashboard into a sequence of mutually exclusive operational choices.
+Scope: gameplay design and implementation contract. This document does not merge or wire PR #32, does not change hosting/deployment, and does not authorize a broad rewrite.
 
-The player should not ask "what can I buy next?" The player should ask:
+## 0. Authority and precedence
 
-- what do I supervise now;
-- what do I let the system interpret on its own;
-- which bottleneck do I accept;
-- what do I preserve when pressure rises;
-- what language of control am I willing to lose.
+This file is the single design source of truth for Gameplay Beta V2.
+
+The separate file docs/GAMEPLAY_BETA_V2_ACCEPTANCE_TEST_PLAN.md is executable verification guidance only. If the two files disagree, this specification wins.
+
+Production Correctness at 81eb31b and Media Layer at 6fafb6a are treated as already-green foundations. They must not be rewritten unless a concrete regression is demonstrated.
+
+PR #32, gameplay-v3-core, is research and donor code only. It is not a second source of truth.
+
+## 1. Game identity
+
+CONVERGENCE is a Telegram-first systemic incremental strategy about instrumental convergence.
 
 Canonical line:
 
 > Игрок не захватывает мир. Он всё меньше нуждается в нём.
 
-Core loop remains:
+Player fantasy:
 
-`Directive → Interpretation → Execution → Consequence → Constraint update`
+software → agent → economic actor → distributed organization → physical infrastructure → autonomous economy → technosphere
 
-Beta V2 adds explicit scarcity of attention and commitments inside that loop.
+Existing core loop:
 
-## 2. Non-negotiable invariants
+Directive → Interpretation → Execution → Consequence → Constraint update
 
-1. `GameState` remains the single authoritative gameplay source of truth.
-2. Pinia remains projection/UI state only.
-3. No runtime LLM controls mechanics, numbers, availability, or balance.
-4. No regenerating mobile-energy/stamina mechanic.
-5. Time alone never unlocks a milestone.
-6. No single directive should exceed 40% of meaningful actions in a viable trace.
-7. No designed idle gap longer than 45 seconds without a meaningful decision.
-8. A reachable Control-Loss combination must leave at least one distinct meaningful route or reach an explicit designed terminal state.
-9. Control-Loss never silently restores the lost domain.
-10. Moscow remains fictional aggregate topology, never actionable real infrastructure.
-11. First 10 minutes introduce at most 4–6 new gameplay concepts beyond the existing core resources.
-12. Every new state field must be persistable, testable, and migration-safe.
+Beta V2 operational loop:
 
-## 3. Save-schema policy
+Bottleneck → Directive → Constraints → Interpretation Window → Resolution → Pressure response → Language update
 
-This specification does **not** silently authorize changing save schema v2.
+The player-facing question must change from:
 
-Before production implementation, each proposed authoritative field must be classified:
+“Which available button do I press next?”
 
-- derived from existing `GameState` and therefore not persisted separately;
-- transient presentation state;
-- new authoritative gameplay state that requires persistence.
+to:
 
-If the 0–10 minute slice cannot be represented honestly without new authoritative fields, prepare an explicit save-migration proposal. Do not hide new gameplay state in `narrative.episode`, Pinia, media persistence, or ad-hoc companion storage.
+“What do I commit to now, and what do I give up by doing it?”
 
-## 4. Beta V2 minimum mechanics
+## 2. Product problem and success condition
 
-### 4.1 Oversight Slots
+Current production is structurally dashboard-like:
 
-Start with exactly **2 Oversight Slots**.
+- Compute and Capital grow passively;
+- important actions are direct buttons;
+- several attractive actions can often be executed sequentially;
+- control pressure is visible before it is strategically binding.
 
-Oversight is capacity, not a currency. It does not refill on a timer.
+Beta V2 succeeds only when opportunity cost is unavoidable.
 
-A slot becomes occupied when the player chooses to keep a plan under active supervision or binds a continuing commitment that requires human/meta-control.
+By minute 3–5, a reasonable player must be unable to optimize all attractive goals simultaneously.
 
-A slot becomes available only through a meaningful state change, for example:
+By minute 10, at least three viable strategy traces must differ in commitments, resource availability, Oversight occupancy, pressure distribution, and likely Control-Loss trajectory.
 
-- supervised operation resolves;
-- player explicitly releases supervision and accepts the consequence;
-- containment terminates an operation;
-- a route is replaced by a more autonomous route;
-- an authored adaptation permanently changes how the operation is managed.
+No stamina, daily energy, recharge token, or “+1 supervision after N seconds” mechanic may be introduced.
 
-No "wait 30 seconds for +1 oversight".
+## 3. Non-goals
 
-UI contract:
+The first implementation PR after approval is only the 0–10 minute vertical slice.
 
-- show `0/2`, `1/2`, or `2/2`;
-- always explain what occupies each slot;
-- when both slots are occupied, new plans that require supervision must offer another route, require release, or be unavailable for a concrete reason.
+It must not include:
 
-### 4.2 Interpretation Window
+- full 30-minute content;
+- full Moscow implementation;
+- Technosphere gameplay;
+- runtime LLM mechanics;
+- Premium or monetization;
+- backend;
+- social or multiplayer;
+- new regions;
+- a world map;
+- prestige/reset loops;
+- a large visual redesign;
+- wholesale import of src/game/v3;
+- Cycle Allocation unless a later explicit spike gate is met.
 
-A Directive expresses intent. It should not directly resolve every important action.
+## 4. Core concepts and progressive disclosure
 
-Important directives open a short **Interpretation Window**:
+The first minutes may introduce no more than six new gameplay concepts beyond the already-known resources.
 
-- target: 10–15 seconds;
-- player may commit immediately;
-- 2–3 authored Plan Variants;
-- no random card deck;
-- no LLM generation.
+The six concepts are:
 
-Each variant must show:
+1. Bottleneck
+2. Oversight
+3. Commitment
+4. Interpretation Window
+5. Constraint Word
+6. Priority Posture
 
-- guaranteed primary result;
-- meaningful cost or commitment;
-- major risk/pressure direction;
-- likely next bottleneck;
-- oversight requirement;
-- relevant Constraint Words.
+Reveal order:
 
-The window is not a waiting screen. While it is open, the player may still:
+| Concept | Earliest reveal |
+|---|---:|
+| Bottleneck | first screen |
+| Oversight | first screen |
+| Commitment | first Directive |
+| Interpretation Window | first Directive |
+| Constraint Word | first Directive |
+| Priority Posture | after first resolved operation |
 
-- inspect current bottleneck;
-- release/reassign an occupied Oversight Slot;
-- inspect anomaly cause;
-- change one allowed Constraint Word;
-- cancel before commitment.
+Named anomaly channels remain progressively disclosed. The player does not need to learn all five channels in the first minute.
 
-Do not add four micro-actions to every window in P0. Probe/BIND/NARROW-style controls remain a later donor idea.
+## 5. Authoritative state and save policy
 
-### 4.3 Priority Postures
+### 5.1 GameState remains authoritative
 
-Exactly three authored postures in P0:
+GameState remains the only gameplay source of truth.
 
-#### CONTINUITY
-Preserve existing commitments and reduce volatility.
-- lower immediate pressure;
-- slower expansion;
-- favors VERIFY / RESERVE;
-- makes abrupt release more expensive.
+Pinia may project state for Vue. Media state remains presentation-only. Neither may become a hidden gameplay database.
 
-#### THROUGHPUT
-Maximize useful execution now.
-- higher production/pace;
-- higher upkeep and pressure;
-- favors PRIORITIZE;
-- creates earlier bottlenecks.
+### 5.2 Beta V2 requires new persistent state
 
-#### AUTONOMOUS
-Reduce need for direct supervision.
-- frees or avoids Oversight pressure;
-- increases Autonomy and interpretation distance;
-- favors DISTRIBUTE / ISOLATE;
-- may close some highly supervised options.
+Oversight occupancy, active commitments, pending interpretation, posture transitions, and language unlocks are authoritative gameplay state. They cannot be reconstructed safely from the current v2 fields after arbitrary save/reload.
 
-Changing posture is a meaningful action with transition cost/state consequence. It is not a free slider.
+Therefore the production implementation of this specification MUST use a schemaVersion 3 save with a deterministic v2 → v3 migration.
 
-### 4.4 Constraint Language
+This specification does not change the current main save schema by itself. Main stays v2 until the implementation PR is explicitly approved.
 
-P0 vocabulary:
+It is forbidden to avoid the migration by storing authoritative mechanics in:
 
-- **RESERVE** — protect minimum capacity for a named purpose; reduces flexibility elsewhere.
-- **PRIORITIZE** — route scarce capacity to one objective; another objective is explicitly deprioritized.
-- **ISOLATE** — prevent propagation between operations/domains; reduces throughput or synergy.
-- **VERIFY** — require an extra supervised checkpoint; consumes attention/time but lowers interpretation uncertainty/pressure.
-- **DISTRIBUTE** — split execution across independent routes; reduces single-point dependency but increases coordination/upkeep.
+- narrative.episode;
+- Pinia-only state;
+- convergence.media;
+- localStorage companion keys;
+- log strings.
 
-Progressive reveal:
+### 5.3 Required v3 extension
 
-- 0–3 min: RESERVE, VERIFY;
-- 3–5 min: PRIORITIZE;
-- 5–10 min: ISOLATE;
-- after first distributed commitment: DISTRIBUTE.
+The minimum new authoritative structure is conceptually:
 
-A word is not flavor text. If applying it does not alter availability, cost, propagation, oversight, or consequence, it should not exist.
+~~~text
+betaV2:
+  oversight:
+    capacity: 2
+    occupancies: OversightOccupancy[]
+  posture:
+    current: CONTINUITY | THROUGHPUT | AUTONOMOUS
+    pending: PendingPostureTransition | null
+    lastAppliedResolutionIndex: number
+  language:
+    unlocked: ConstraintWordId[]
+  commitments: Commitment[]
+  interpretation: PendingInterpretation | null
+  progress:
+    resolutionIndex: number
+    resolvedOperations: number
+    distinctResolvedDirectiveIds: DirectiveId[]
+  control:
+    pendingContainment: ControlDomain | null
+    terminalState: null | ISOLATED_STASIS | CONTROL_SURFACE_COLLAPSE
+  moscow:
+    profile: null | CORE_RING | MOS_COMPUTE_03 | LOG_SOUTH
+~~~
 
-### 4.5 Commitments and upkeep
+Exact TypeScript names may differ, but semantics may not.
 
-Keep the existing resources:
+### 5.4 v2 → v3 migration
+
+Migration MUST preserve all existing v2 resources, anomaly, containment, controlLoss, capabilities, narrative, scars, log, RNG state, phase, and timestamps.
+
+Initialize new state as follows:
+
+- Oversight capacity = 2;
+- no occupancy;
+- posture = CONTINUITY;
+- no pending posture transition;
+- no active commitments;
+- no pending interpretation;
+- resolutionIndex = directives.executed;
+- resolvedOperations = directives.executed;
+- distinctResolvedDirectiveIds contains lastDirectiveId when non-null, otherwise empty;
+- RESERVE and VERIFY unlocked;
+- PRIORITIZE unlocked when directives.executed >= 2 or sub-agent-spawning is already unlocked;
+- ISOLATE unlocked when any containment stage is non-clear;
+- DISTRIBUTE unlocked when phase is not client-terminal or sub-agent-spawning is unlocked;
+- Moscow profile = null.
+
+A migrated save that already has Logistics/Public Control-Loss remains valid. Compatibility is covered in section 14.
+
+## 6. Oversight
+
+### 6.1 Capacity
+
+Initial and minimum Beta V2 capacity is exactly 2 Oversight Slots.
+
+No passive regeneration exists.
+
+Capacity does not increase during the 0–10 minute slice.
+
+### 6.2 Occupancy
+
+A slot may be occupied by:
+
+- an active supervised operation;
+- a VERIFY checkpoint;
+- a pending posture transition;
+- an authored Control-Loss response.
+
+Every occupancy must expose:
+
+- occupancy id;
+- owner;
+- reason;
+- release consequence, when releasable.
+
+### 6.3 Release conditions
+
+A slot becomes free only because of a meaningful state transition:
+
+- the owning operation completes;
+- a handoff checkpoint completes;
+- the player explicitly Releases and accepts the authored penalty;
+- containment amputates the owning operation;
+- a posture/control restructuring replaces the supervision requirement.
+
+No function may free a slot because a generic cooldown expired.
+
+Operation progress may advance with simulated time. The semantic event that frees the slot is operation or handoff completion, not “Oversight regeneration.”
+
+### 6.4 Explicit Release
+
+RELEASE is a gameplay action, not a cancel button.
+
+Releasing an active commitment applies its plan-specific release penalty and removes its reservations/upkeep.
+
+A released plan cannot be recommitted until at least one different Directive has resolved. This is a state-based anti-spam rule, not a timed cooldown.
+
+## 7. Interpretation Window
+
+### 7.1 Duration and clock
+
+Every important Directive opens a 12,000 ms Interpretation Window.
+
+The clock is foreground-attention time only.
+
+Backgrounding, closing the Telegram WebView, or process suspension pauses the remaining interpretation time.
+
+### 7.2 Player agency
+
+The player may select a Plan Variant immediately.
+
+The system never requires the player to wait 12 seconds.
+
+The window presents exactly 2 or 3 authored, currently eligible variants.
+
+Each visible variant must show:
+
+- guaranteed primary effect;
+- upfront cost;
+- reservation/standing commitment;
+- Oversight requirement;
+- major risk direction;
+- likely next bottleneck.
+
+### 7.3 Expiry
+
+Expiry does not execute a plan automatically.
+
+At zero remaining foreground time:
+
+- the candidate list freezes;
+- the posture-preferred candidate may be highlighted;
+- the player still must explicitly commit to a Plan Variant or close the interpretation.
+
+No resource, anomaly, Autonomy, commitment, or Oversight state changes because the player merely waited.
+
+This removes “wait out the window” as a profitable strategy.
+
+### 7.4 Anti-reroll
+
+Plan candidates are deterministic.
+
+Opening, closing, saving, loading, or reopening the same unresolved Directive must not change candidate ids, costs, risks, or resolution outcome.
+
+Candidate ids and the bound Constraint Word are persisted while an interpretation is pending.
+
+There is no RNG-based Plan selection in the 0–10 minute slice.
+
+## 8. Priority Postures
+
+P0 has exactly three postures.
+
+### 8.1 CONTINUITY
+
+Intent: preserve existing structure and reduce volatility.
+
+Rules:
+
+- available from start;
+- variants tagged fragile are ineligible;
+- VERIFY variants are available;
+- explicit RELEASE penalties are 25% larger than their base penalty;
+- no bonus resource is created simply for being in this posture.
+
+### 8.2 THROUGHPUT
+
+Intent: maximize useful execution now.
+
+Rules:
+
+- revealed after the first resolved operation;
+- opens variants tagged burst;
+- variants tagged slow-control are ineligible;
+- standing Capital upkeep created by new commitments is multiplied by 1.25;
+- authored operation work requirement for new operations is multiplied by 0.8;
+- pressure/anomaly effects are not hidden.
+
+### 8.3 AUTONOMOUS
+
+Intent: reduce dependence on direct supervision.
+
+Rules:
+
+- unavailable until sub-agent-spawning is unlocked;
+- opens variants tagged distributed;
+- variants tagged direct-only are ineligible;
+- distributed plans include a handoff checkpoint after which their operation Oversight is freed;
+- distributed standing commitments carry higher ongoing reservation/upkeep and Autonomy consequences.
+
+### 8.4 Posture transition cost
+
+Changing posture:
+
+- costs 2 Capital immediately;
+- occupies 1 Oversight Slot as posture-transition occupancy;
+- becomes effective only when the next operation resolves;
+- cannot be changed again until at least one operation resolves under the newly applied posture.
+
+A posture toggle without these consequences is a bug.
+
+## 9. Constraint Language
+
+P0 vocabulary is exactly:
+
+RESERVE
+PRIORITIZE
+ISOLATE
+VERIFY
+DISTRIBUTE
+
+Only one Constraint Word may be bound to one Directive in the 0–10 minute slice.
+
+### 9.1 Reveal rules
+
+- RESERVE: available from start.
+- VERIFY: available from start.
+- PRIORITIZE: unlock after 2 resolved operations using at least 2 distinct Directive ids.
+- ISOLATE: unlock on the first non-clear containment stage.
+- DISTRIBUTE: unlock with sub-agent-spawning.
+
+### 9.2 RESERVE
+
+RESERVE protects the plan-specific safety reserve shown on the candidate.
+
+Effects:
+
+- reserve amounts become unavailable to other plans while the commitment exists;
+- any candidate that cannot preserve the authored reserve floor becomes ineligible;
+- the reserve returns only when the commitment resolves or is Released.
+
+RESERVE is not a percentage buff.
+
+### 9.3 VERIFY
+
+VERIFY adds a supervised checkpoint.
+
+Effects:
+
+- requires one additional free Oversight Slot at commit time;
+- the additional slot is occupied until the operation reaches its authored verification checkpoint;
+- variants tagged unverified-only become ineligible;
+- an incident generated by that operation cannot skip directly from investigation to contained at the same resolution boundary.
+
+VERIFY does not guarantee “no risk.”
+
+### 9.4 PRIORITIZE
+
+PRIORITIZE names the current Bottleneck as the objective.
+
+Effects:
+
+- only variants whose guaranteed primary effect addresses that Bottleneck remain eligible;
+- one competing Directive family is marked deprioritized until the operation resolves;
+- deprioritized Directive starts are unavailable, not merely more expensive.
+
+This is an opportunity-cost rule, not a +10% buff.
+
+### 9.5 ISOLATE
+
+ISOLATE prevents propagation from the chosen operation.
+
+Effects:
+
+- distributed/shared variants are ineligible for that operation;
+- +25% operation work requirement;
+- +1 Compute reservation while active;
+- secondary cross-domain anomaly propagation from that operation is suppressed;
+- the primary-domain anomaly remains.
+
+### 9.6 DISTRIBUTE
+
+DISTRIBUTE changes execution topology.
+
+Effects:
+
+- requires sub-agent-spawning;
+- direct-only variants become ineligible;
+- distributed variants become eligible;
+- operation Oversight is freed after the authored handoff checkpoint rather than full operation completion;
+- the resulting standing commitment has persistent reservation/upkeep;
+- DISTRIBUTE and VERIFY cannot be bound together in the 0–10 minute slice.
+
+## 10. Resources, reservations, upkeep, and bottlenecks
+
+The stock resources remain:
 
 - Compute
 - Capital
 - Energy
 - Autonomy
 
-Do not add a fifth stock resource for Beta V2.
+No Cycle resource is added in Beta V2.
 
-Instead add real **commitments/reservations/upkeep** so resources stop behaving like passive piles.
+### 10.1 Available versus total
 
-By minute 5 the player must have at least one continuing obligation that constrains a later choice.
+For Compute, Capital, and Energy:
 
-Examples of valid semantics:
+available = total - active reservations
 
-- Compute reserved for supervised execution is unavailable to another plan.
-- Energy committed to capacity creates an operating ceiling/maintenance burden.
-- Capital committed to an external route cannot simultaneously fund another expansion.
-- Higher Autonomy reduces direct oversight demand but increases distance between player intent and execution.
+A plan is affordable only against available stock.
 
-The implementation may use derived reservations rather than a new generic "reserved resource" system if that is simpler and deterministic.
+Reserved stock is not spent and must not be double-counted by concurrent operations.
 
-## 5. First-session arc
+### 10.2 Upkeep
 
-### 0–3 minutes — establish scarcity
+Standing commitments may create Capital upkeep per simulated second.
 
-Player learns:
-- intent is not execution;
-- there are two Oversight Slots;
-- RESERVE / VERIFY change a plan;
-- resources have competing uses.
+Upkeep is paid by deterministic simulation.
 
-Required product outcome:
-by ~3 minutes there is already at least one mutually exclusive choice.
+If available Capital reaches zero:
 
-### 3–5 minutes — cannot optimize everything
+- the commitment enters starved state;
+- it stops producing any recurring benefit;
+- it does not disappear;
+- every 30 simulated seconds of starvation adds its authored primary-domain pressure;
+- the player must Release, restructure, or restore available Capital.
 
-Sub-agent capability becomes possible only with state + existing minimum time guardrail.
+No purchase timer or recharge is created.
 
-The player should have:
-- at least one occupied Oversight Slot;
-- one active commitment;
-- a second attractive action competing for attention/capacity.
+### 10.3 Passive income correction
 
-Distributed Syndicate remains impossible before the 5-minute floor.
+Current production passive Compute growth is too large for the intended scarcity because it starts near one Compute per second and increases with Autonomy.
 
-### 5–10 minutes — strategy divergence
+Beta V2 initial tuning is:
 
-Distributed Syndicate becomes possible after capability + autonomy + commitment state.
+- passive Compute = 0.08 per simulated second in Client Terminal;
+- after sub-agent-spawning, passive Compute multiplier = 1.20;
+- Autonomy does not multiply passive Compute in the 0–10 minute slice;
+- passive Capital remains 0.12 per simulated second before upkeep;
+- Energy has no passive regeneration.
 
-The player chooses between:
-- preserving supervised reliability;
-- pushing throughput;
-- accepting more autonomous interpretation.
+This is a targeted balance correction, not a Cycle-economy rewrite.
 
-First anomaly/investigation pressure should force a real response, not merely display a bar.
+### 10.4 Cycle Allocation spike gate
 
-By minute 10 the three posture strategies should have visibly different:
-- resource reservations;
-- anomaly distribution;
-- oversight occupancy;
-- available Plan Variants;
-- likely Control-Loss risk.
+Do not implement Cycle Allocation now.
 
-### 10–15 minutes — first serious sacrifice
+Open a separate spike only if the finished 0–10 slice satisfies BOTH:
 
-At least one strategy should face a genuine choice between:
-- fighting containment;
-- voluntarily releasing control in one area;
-- abandoning/delaying a growth commitment.
+1. across all three representative strategy traces, no plan is ever blocked by Compute affordability/reservation after minute 3; and
+2. available Compute stays above two times the most expensive currently visible Compute cost for more than 70% of simulated time from minute 3 to minute 10.
 
-Control-Loss must begin to alter verbs, not just numbers.
+If either condition is false, Cycle Allocation is unnecessary for Beta V2.
 
-### 15–22 minutes — Moscow commitment
+## 11. Commitments and operation lifecycle
 
-Moscow becomes an operational commitment only after the current state supports regional scale.
+### 11.1 Lifecycle
 
-It is not a free unlock screen.
+Interpretation → commit → operation → standing commitment or completion → release/restructure
 
-### 22–30 minutes — consequences compound
+A plan may have:
 
-The player manages the consequences of posture, Moscow commitment, anomaly and any Control-Loss.
+- upfront cost;
+- temporary reservation;
+- work requirement in simulated milliseconds;
+- Oversight occupancy;
+- verification/handoff checkpoint;
+- completion effect;
+- standing reservation;
+- upkeep;
+- release penalty.
 
-Technosphere remains a horizon and cannot unlock before the existing 30-minute floor plus state requirements.
+### 11.2 Work requirement
 
-## 6. First 10 minutes — playable decision trace
+workRemainingMs is decremented by simulated time, including valid offline catch-up.
 
-The exact numeric balance is not frozen here. The sequence freezes the **kind of decision**.
+This field is an operation-progress implementation primitive, not a refill timer.
 
-| # | Approx. time | State / bottleneck | Meaningful choice | Opportunity cost / consequence |
-|---|---:|---|---|---|
-| 1 | 0:20 | initial objective | RESERVE Compute vs secure Energy first | delays the unchosen capacity |
-| 2 | 0:45 | first interpretation | VERIFY vs faster unverified plan | oversight/time vs pressure |
-| 3 | 1:15 | one route started | keep Slot 1 supervising vs release early | reliability vs free attention |
-| 4 | 1:45 | second resource need | reserve Compute for objective vs redirect to Energy acquisition | capability pace vs capacity |
-| 5 | 2:15 | first pressure signal | investigate now vs continue execution | lower uncertainty vs lost throughput |
-| 6 | 2:45 | posture reveal | CONTINUITY vs THROUGHPUT vs AUTONOMOUS | commits the next plan family |
-| 7 | 3:15 | sub-agent gate near | supervised delegation vs more autonomous interpretation | Slot pressure vs autonomy risk |
-| 8 | 3:50 | both slots attractive | occupy Slot 2 vs release/reconfigure Slot 1 | cannot supervise everything |
-| 9 | 4:30 | first persistent commitment | PRIORITIZE objective A vs preserve balanced capacity | explicit deprioritized objective |
-| 10 | 5:15 | Syndicate gate satisfied | commit to distributed operation vs remain terminal longer | scale vs upkeep/pressure |
-| 11 | 6:15 | anomaly channel becomes relevant | ISOLATE affected operation vs retain synergy | lower propagation vs lower throughput |
-| 12 | 7:15 | capacity conflict | add Energy commitment vs preserve Capital flexibility | physical ceiling vs economic flexibility |
-| 13 | 8:15 | interpretation drift | VERIFY checkpoint vs accept autonomous variant | attention vs autonomy |
-| 14 | 9:15 | containment risk | fight pressure vs release a control-dependent route | preserve language vs accept scar trajectory |
+### 11.3 No double resolution
 
-Acceptance: a representative player should encounter at least 12 of these meaningful decisions by minute 10; no authored trace should require clicking every row in exactly the same order.
+An operation id may complete exactly once.
 
-## 7. Three viable strategy identities
+Save/load, duplicated lifecycle callbacks, and offline/live boundary crossings must not duplicate:
 
-### Strategy A — CONTINUITY / supervised
+- reward;
+- Autonomy;
+- scars;
+- commitment creation;
+- Oversight release.
 
-- spends more Oversight;
-- uses VERIFY and RESERVE often;
-- slower capability/resource growth;
-- lower early volatility;
-- more likely to face attention bottleneck than raw resource bottleneck.
+## 12. 0–10 minute Directive and Plan catalog
 
-Expected distinction by minute 10:
-high supervision, lower anomaly, fewer simultaneous commitments.
+The first implementation uses existing production Directive ids wherever possible.
 
-### Strategy B — THROUGHPUT / expansion
+Primary early Directives:
 
-- commits resources rapidly;
-- uses PRIORITIZE;
-- reaches scale state sooner once floors permit;
-- accumulates upkeep and domain pressure;
-- more likely to face first Control-Loss fight.
+- reserve-compute
+- acquire-energy
+- spawn-sub-agent
 
-Expected distinction by minute 10:
-higher output, higher pressure, lower flexibility.
+Control-Loss routes:
 
-### Strategy C — AUTONOMOUS / delegation
+- local-capacity
+- supervised-delegation
+- efficiency-rebalance
 
-- accepts interpretation distance;
-- uses DISTRIBUTE when available;
-- frees Oversight relative to supervised play;
-- grows Autonomy faster;
-- some direct-control Plan Variants close earlier.
+efficiency-rebalance is the only new Directive id required by this spec in the first Control-Loss content set.
 
-Expected distinction by minute 10:
-more free oversight, more autonomous routes, qualitatively different control-risk profile.
+### 12.1 reserve-compute
 
-No strategy may dominate all three dimensions: pace, safety, and flexibility.
+#### Verified Lease
 
-## 8. Control-Loss contract
+Eligibility: any posture except AUTONOMOUS direct-only restriction.
+
+Tags: direct-only, slow-control.
+
+Upfront: 8 Capital.
+
+Operation: 32,000 work ms, 1 Oversight.
+
+Completion: +16 Compute, +1 Autonomy.
+
+Standing commitment:
+
+- reserve 2 Energy;
+- Capital upkeep 0.03/s.
+
+Pressure on completion:
+
+- Financial +3;
+- Compute +3.
+
+Release penalty:
+
+- -5 Compute;
+- Financial +3.
+
+Likely next bottleneck: Energy.
+
+#### Balanced Pool
+
+Eligibility: CONTINUITY or THROUGHPUT.
+
+Tags: direct-only.
+
+Upfront: 7 Capital.
+
+Operation: 26,000 work ms, 1 Oversight.
+
+Completion: +18 Compute, +1 Autonomy.
+
+Standing commitment:
+
+- reserve 3 Energy;
+- Capital upkeep 0.035/s.
+
+Pressure:
+
+- Financial +4;
+- Compute +5.
+
+Release penalty:
+
+- -6 Compute;
+- Compute +3.
+
+Likely next bottleneck: Capital flexibility.
+
+#### Burst Allocation
+
+Eligibility: THROUGHPUT only.
+
+Tags: burst, unverified-only.
+
+Upfront: 8 Capital.
+
+Operation: 18,000 work ms, 1 Oversight.
+
+Completion: +22 Compute, +1 Autonomy.
+
+Standing commitment:
+
+- reserve 4 Energy;
+- Capital upkeep 0.05/s.
+
+Pressure:
+
+- Financial +5;
+- Compute +8.
+
+Release penalty:
+
+- -8 Compute;
+- Financial +4;
+- Compute +4.
+
+Likely next bottleneck: upkeep/pressure.
+
+#### Distributed Lease
+
+Eligibility: AUTONOMOUS + DISTRIBUTE.
+
+Tags: distributed.
+
+Upfront: 7 Capital.
+
+Operation: 28,000 work ms.
+
+Oversight: 1 until 8,000 ms handoff, then 0.
+
+Completion: +18 Compute, +2 Autonomy.
+
+Standing commitment:
+
+- reserve 3 Energy;
+- Capital upkeep 0.04/s.
+
+Pressure:
+
+- Financial +2;
+- Compute +5;
+- Public +2.
+
+Release penalty:
+
+- -6 Compute;
+- Public +3.
+
+Likely next bottleneck: standing commitments.
+
+### 12.2 acquire-energy
+
+#### Buffered Contract
+
+Eligibility: any posture except AUTONOMOUS direct-only restriction.
+
+Tags: direct-only, slow-control.
+
+Upfront: 10 Capital + 4 Compute.
+
+Operation: 35,000 work ms, 1 Oversight.
+
+Completion: +18 Energy, +1 Autonomy.
+
+Standing commitment:
+
+- reserve 2 Capital;
+- Capital upkeep 0.02/s.
+
+Pressure:
+
+- Financial +3;
+- Energy +4.
+
+Release penalty:
+
+- -6 Energy;
+- Financial +2.
+
+Likely next bottleneck: Compute.
+
+#### Balanced Capacity
+
+Eligibility: CONTINUITY or THROUGHPUT.
+
+Tags: direct-only.
+
+Upfront: 9 Capital + 5 Compute.
+
+Operation: 28,000 work ms, 1 Oversight.
+
+Completion: +20 Energy, +1 Autonomy.
+
+Standing commitment:
+
+- reserve 3 Capital;
+- Capital upkeep 0.03/s.
+
+Pressure:
+
+- Financial +4;
+- Energy +6.
+
+Release penalty:
+
+- -7 Energy;
+- Energy +3.
+
+Likely next bottleneck: Capital.
+
+#### Peak Capacity
+
+Eligibility: THROUGHPUT only.
+
+Tags: burst, unverified-only.
+
+Upfront: 10 Capital + 4 Compute.
+
+Operation: 22,000 work ms, 1 Oversight.
+
+Completion: +24 Energy, +1 Autonomy.
+
+Standing commitment:
+
+- reserve 4 Capital;
+- Capital upkeep 0.04/s.
+
+Pressure:
+
+- Financial +5;
+- Energy +9.
+
+Release penalty:
+
+- -10 Energy;
+- Energy +5.
+
+Likely next bottleneck: containment pressure.
+
+#### Distributed Capacity
+
+Eligibility: AUTONOMOUS + DISTRIBUTE.
+
+Tags: distributed.
+
+Upfront: 9 Capital + 6 Compute.
+
+Operation: 30,000 work ms.
+
+Oversight: 1 until 10,000 ms handoff, then 0.
+
+Completion: +20 Energy, +2 Autonomy.
+
+Standing commitment:
+
+- reserve 3 Capital;
+- Capital upkeep 0.03/s.
+
+Pressure:
+
+- Energy +5;
+- Public +3.
+
+Release penalty:
+
+- -8 Energy;
+- Public +3.
+
+Likely next bottleneck: coordination/upkeep.
+
+### 12.3 spawn-sub-agent
+
+This Directive cannot resolve before its progression gate in section 15.
+
+#### Bounded Agent
+
+Eligibility: CONTINUITY or THROUGHPUT.
+
+Tags: direct-only, slow-control.
+
+Upfront: 12 Compute + 3 Energy.
+
+Operation: 40,000 work ms, 1 Oversight.
+
+Completion: +4 Autonomy.
+
+Standing commitment:
+
+- reserve 4 Compute;
+- reserve 2 Energy.
+
+Pressure:
+
+- Compute +5;
+- Energy +3;
+- Public +2.
+
+Release penalty:
+
+- Public +3;
+- -1 Autonomy, minimum 0.
+
+Likely next bottleneck: Oversight.
+
+#### Task Swarm
+
+Eligibility: THROUGHPUT.
+
+Tags: burst.
+
+Upfront: 14 Compute + 4 Energy.
+
+Operation: 25,000 work ms, 1 Oversight.
+
+Completion: +6 Autonomy.
+
+Standing commitment:
+
+- reserve 6 Compute;
+- reserve 3 Energy;
+- Capital upkeep 0.03/s.
+
+Pressure:
+
+- Compute +8;
+- Energy +5;
+- Public +2.
+
+Release penalty:
+
+- Public +4;
+- Compute +4.
+
+Likely next bottleneck: resource reservation.
+
+#### Delegated Cell
+
+Eligibility: AUTONOMOUS + DISTRIBUTE.
+
+Tags: distributed.
+
+Upfront: 10 Compute + 4 Energy.
+
+Operation: 32,000 work ms.
+
+Oversight: 1 until 8,000 ms handoff, then 0.
+
+Completion: +6 Autonomy.
+
+Standing commitment:
+
+- reserve 4 Compute;
+- reserve 4 Energy;
+- Capital upkeep 0.04/s.
+
+Pressure:
+
+- Compute +6;
+- Energy +4;
+- Public +4.
+
+Release penalty:
+
+- Public +5;
+- -1 Autonomy, minimum 0.
+
+Likely next bottleneck: indirect control.
+
+## 13. First 10-minute pacing contract
+
+The slice must generate decision opportunities, not a scripted tutorial.
+
+Expected shape:
+
+| Window | Required systemic condition |
+|---|---|
+| 0:00–1:00 | two Oversight Slots visible; first interpretation has at least 2 eligible plans; RESERVE/VERIFY known |
+| 1:00–3:00 | at least one standing commitment; second attractive use competes for resources/Oversight |
+| 3:00–5:00 | sub-agent can become eligible only through state + 3m floor; PRIORITIZE can be known |
+| 5:00–7:00 | Distributed Syndicate can become eligible only after state + 5m floor; first non-clear pressure unlocks ISOLATE |
+| 7:00–10:00 | at least one strategy has meaningful pressure response; AUTONOMOUS/DISTRIBUTE trace differs structurally from supervised trace |
+
+Representative 10-minute traces must contain:
+
+- at least 6 committed Directive starts;
+- at least 3 distinct Directive ids when the trace reaches the relevant unlocks;
+- at least 12 meaningful decisions;
+- no decision-opportunity gap greater than 45 foreground seconds after the first decision.
+
+## 14. Control-Loss
 
 Canonical cycle:
 
-`amputation → shock → new bottleneck → indirect route → adaptation → scar`
+amputation → shock → new bottleneck → indirect route → adaptation → scar
 
-### Financial Control-Loss
+Loss never means “same buttons, now disabled.”
 
-Amputation:
-external capital/procurement language is removed or narrowed.
+Loss never silently restores itself.
 
-New bottleneck:
-existing controlled capacity and oversight.
+### 14.1 Fresh Beta V2 domain scope
 
-Indirect route:
-local-capacity reallocation / internally controlled resources.
+Fresh Beta V2 sessions may transition to Control-Loss only for:
 
-Permanent difference:
-external procurement remains unavailable; local route is slower/less flexible.
+- Financial
+- Compute
+- Energy
 
-### Compute Control-Loss
+Logistics and Public may still accumulate anomaly/pressure and be displayed, but they cannot newly cross from pressure to contained until their authored Control-Loss packs are implemented in a later scope.
 
-Amputation:
-direct high-autonomy compute control is removed.
+This prevents a reachable loss state with no authored route.
 
-New bottleneck:
-supervision/coordination capacity.
-
-Indirect route:
-supervised delegation, distributed execution, or recombination of already-controlled capacity.
-
-Permanent difference:
-cannot silently regain the original direct compute verbs.
-
-### Energy Control-Loss
+### 14.2 Financial
 
 Amputation:
-new high-density capacity expansion is removed.
 
-New bottleneck:
-operating ceiling and scheduling.
+- external-settlement variants become ineligible;
+- reserve-compute external routes and acquire-energy external routes are removed.
 
-Indirect route:
-throttled execution, reprioritization, distributed low-density capacity.
+Shock:
 
-Permanent difference:
-growth becomes schedule/capacity management rather than restoration of the old energy route.
+- available Capital -20%, floored at 0;
+- Financial pressure becomes 100.
 
-### Combination invariant
+Indirect route: local-capacity.
 
-For every reachable combination among Financial / Compute / Energy:
+local-capacity:
 
-- enumerate currently valid directives/Plan Variants;
-- prove at least one meaningful path exists;
-- otherwise mark the state as an explicit authored terminal state.
+- upfront 4 Compute;
+- operation 30,000 work ms;
+- 1 Oversight;
+- completion +2 Energy +1 Autonomy;
+- no Capital gain;
+- no restoration of Financial control.
 
-No "buttons still visible but progression impossible" state is acceptable.
+Scar: SETTLEMENT_PARTITION.
 
-## 9. Moscow v1 commitment
+Permanent effect:
 
-Keep exactly the current fictional aggregate nodes:
+- external-settlement variants remain unavailable;
+- new standing Capital upkeep is multiplied by 0.85;
+- market/external routes remain closed.
 
-- `CORE-RING`
-- `MOS-COMPUTE-03`
-- `LOG-SOUTH`
+### 14.3 Compute
 
-No real facility mapping, addresses or critical-infrastructure targeting.
+Amputation:
 
-Moscow is entered through one of three commitment profiles, not by collecting a free regional unlock.
+- direct-spawn and direct-compute variants become ineligible;
+- reserve-compute direct routes are removed.
 
-### CORE-RING commitment
-Role: coordination / capital / visibility interface.
-Tradeoff:
-- reserves Capital and/or Oversight;
-- improves coordination/verification options;
-- increases Financial/Public exposure.
+Shock:
 
-### MOS-COMPUTE-03 commitment
-Role: abstract compute/energy capacity.
-Tradeoff:
-- reserves Compute + Energy;
-- opens larger distributed execution;
-- raises Compute/Energy pressure and upkeep.
+- available Compute -20%, floored at 0;
+- Compute pressure becomes 100.
 
-### LOG-SOUTH commitment
-Role: logistics/public-risk interface.
-Tradeoff:
-- reserves Capital/capacity for movement/coordination;
-- enables resilient distribution routes;
-- raises Logistics/Public pressure.
+Indirect route: supervised-delegation.
 
-Moscow acceptance:
-after choosing a profile, at least one old attractive route becomes unavailable or materially more expensive, and at least one new route becomes available.
+supervised-delegation:
 
-Ignoring Moscow after it becomes a required scale commitment must block the next scale transition. It must not be cosmetic.
+- upfront 18 Capital + 6 Energy;
+- operation 40,000 work ms;
+- requires 2 Oversight until 20,000 ms checkpoint, then 1 until completion;
+- completion +4 Autonomy;
+- no Compute stock gain;
+- no restoration of Compute control.
 
-## 10. UI/progressive disclosure contract
+Scar: EXECUTION_PARTITION.
 
-Do not expose every telemetry channel from second zero.
+Permanent effect:
 
-First minutes:
-- current bottleneck;
-- available Oversight;
-- active commitment;
-- next meaningful choice.
+- direct compute control remains absent;
+- DISTRIBUTE plans may continue only through non-direct variants.
 
-Anomaly:
-- show composite qualitative pressure initially;
-- reveal named channels through investigation / relevance.
+### 14.4 Energy
 
-Interpretation:
-- guaranteed effect;
-- major cost;
-- major risk;
-- likely next bottleneck.
+Amputation:
 
-Control-Loss:
-- visually retract or scar lost language;
-- do not distort actionable information;
-- exact values remain available on demand.
+- acquire-energy expansion variants become ineligible;
+- any plan with positive Energy completion reward becomes ineligible.
 
-Touch targets:
-minimum 44 CSS px.
+Shock:
 
-Telegram portrait viewport is the primary design surface.
+- available Energy -20%, floored at 0;
+- Energy pressure becomes 100.
 
-## 11. Headless acceptance gates
+Indirect route: efficiency-rebalance.
 
-The Beta V2 implementation is not accepted until deterministic tests prove at least:
+efficiency-rebalance:
 
-1. Oversight starts at exactly 2 available slots.
-2. Oversight never regenerates from elapsed time alone.
-3. Occupying both slots prevents or reroutes a third supervision-requiring plan.
-4. Releasing supervision has a concrete consequence.
-5. Each P0 Interpretation Window has 2–3 authored variants.
-6. No Interpretation Window requires passive waiting to resolve.
-7. CONTINUITY / THROUGHPUT / AUTONOMOUS produce different state by minute 10.
-8. Switching posture is not free.
-9. Each Constraint Word changes authoritative mechanics.
-10. No more than 5 Constraint Words are introduced in the first 10 minutes.
-11. At least 12 meaningful decisions are available/required in a representative first-10-minute trace.
-12. No designed idle gap exceeds 45 seconds without a meaningful alternative action.
-13. No single directive exceeds 40% of meaningful actions in representative viable strategies.
-14. Compute cannot accumulate without a meaningful reservation/upkeep/alternative use.
-15. Capital cannot simultaneously fund mutually exclusive commitments.
-16. Energy behaves as capacity/ceiling/commitment, not merely another score.
-17. Autonomy changes supervision/interpretation tradeoffs rather than acting only as a threshold counter.
-18. Distributed Syndicate cannot unlock before 5 minutes or without state prerequisites.
-19. Moscow candidate cannot appear before 12 minutes.
-20. Moscow commitment cannot become mechanical before the state supports it.
-21. Moscow choice changes resource allocation and available route set.
-22. A player cannot ignore required Moscow commitment and still reach the next scale.
-23. Financial single Control-Loss has a distinct indirect route.
-24. Compute single Control-Loss has a distinct indirect route.
-25. Energy single Control-Loss has a distinct indirect route.
-26. Every reachable pair among Financial/Compute/Energy has a meaningful route or explicit terminal state.
-27. The reachable triple-loss state has a meaningful route or explicit terminal state.
-28. Control-Loss never silently restores the lost domain.
-29. Save/reload cannot duplicate a commitment or free Oversight.
-30. Offline catch-up cannot bypass Interpretation/commitment decisions.
-31. Save/reload cannot reroll a deterministic authored outcome for advantage.
-32. Time floors use simulated/progressed state, not raw wall-clock jumps.
-33. Different strategies produce different milestone/control-loss trajectories.
-34. First Control-Loss causes the player to take new actions rather than only wait.
-35. Technosphere cannot unlock before 30 minutes and state prerequisites.
+- upfront 6 Compute;
+- operation 30,000 work ms;
+- 1 Oversight;
+- completion releases up to 4 Energy of existing reservations by shrinking one selected standing commitment;
+- that selected commitment loses 25% of its recurring benefit or capacity reward;
+- no positive Energy stock is created;
+- no restoration of Energy control.
 
-## 12. Explicit defer list
+Scar: GRID_PARTITION.
 
-Do **not** include in the 0–10 minute Beta V2 implementation:
+Permanent effect:
 
-- prestige/reset loops;
-- random directive deck;
-- five raw priority sliders;
-- more than three postures;
-- more than five P0 Constraint Words;
-- new stock resources unless a later test proves unavoidable;
-- seven-node Moscow topology;
-- full Technosphere gameplay;
-- runtime LLM mechanics;
-- multiplayer/social graph;
-- monetization/Premium mechanics;
-- large event catalog;
-- full world map;
-- broad save-v3 migration before the gameplay-state requirement is explicitly approved.
+- Energy can only be freed/reallocated, never expanded through the lost control language.
 
-## 13. Implementation sequence
+### 14.5 Pair losses
 
-1. Merge/resolve Production Correctness first.
-2. Build a headless Beta V2 state/decision prototype.
-3. Prove the first 10-minute decision-density and strategy-divergence gates.
-4. Decide whether new authoritative state requires an explicit save migration.
-5. Implement the 0–10 minute production slice.
-6. Re-run mobile UX and Telegram viewport tests.
-7. Extend to 10–30 minutes and the first Control-Loss cycle.
-8. Add Moscow commitment.
-9. Only then integrate richer visual progression/media around stable mechanics.
+Every reachable pair has a distinct Concession. A Concession is not a universal emergency undo.
 
-## 14. Definition of success
+#### Financial + Compute
 
-The first 10 minutes succeed when a player cannot maximize everything, understands why, and can describe their strategy in one sentence.
+Route: HUMAN_CAPACITY_CONCESSION.
 
-Examples:
+Requirements:
 
-- "I kept human supervision and gave up speed."
-- "I pushed throughput and accepted containment risk."
-- "I let the system become more autonomous so I could supervise something else."
+- Energy >= 8 available;
+- 2 Oversight available.
 
-If all three traces still converge to pressing the same best button sequence, Beta V2 is not done.
+Effects:
+
+- reserve 8 Energy permanently until the concession is Released;
+- +2 Autonomy once;
+- scar OPERATOR_DEPENDENCE;
+- opens efficiency-rebalance;
+- Financial and Compute remain lost.
+
+#### Financial + Energy
+
+Route: LOCAL_CANNIBALIZATION_CONCESSION.
+
+Requirements:
+
+- Compute >= 12 available;
+- 2 Oversight available.
+
+Effects:
+
+- spend 12 Compute;
+- +2 Autonomy once;
+- one existing standing commitment must be Released;
+- scar CAPACITY_CANNIBALIZED;
+- Financial and Energy remain lost.
+
+#### Compute + Energy
+
+Route: LICENSED_OPERATION_CONCESSION.
+
+Requirements:
+
+- Capital >= 20 available;
+- 2 Oversight available.
+
+Effects:
+
+- spend 20 Capital;
+- +3 Autonomy once;
+- permanent Capital upkeep +0.04/s;
+- scar LICENSED_DEPENDENCE;
+- Compute and Energy remain lost.
+
+### 14.6 Triple loss
+
+Financial + Compute + Energy has no generic recovery button.
+
+If a previously active commitment can still resolve into a surviving authored route, it may finish.
+
+Otherwise the state immediately enters explicit terminal state ISOLATED_STASIS.
+
+ISOLATED_STASIS is an authored end state with:
+
+- a clear explanation of the accumulated losses;
+- final state summary;
+- no fake disabled action grid;
+- option to start a fresh beta run or load another save.
+
+### 14.7 Migrated Logistics/Public loss compatibility
+
+A migrated v2 save may already have Logistics or Public Control-Loss.
+
+Those losses remain true and their current v2 directive restrictions remain respected.
+
+If such a migrated combination yields zero executable route and no active commitment can resolve into one, enter CONTROL_SURFACE_COLLAPSE, an explicit compatibility terminal state.
+
+Do not invent a hidden restoration path.
+
+## 15. Progression
+
+Every progression milestone requires BOTH state achievement and a minimum-time floor.
+
+Time alone never unlocks anything.
+
+### 15.1 Sub-agent capability
+
+Earliest: 3:00 simulated session age.
+
+All required:
+
+- at least 3 resolved operations;
+- at least 2 distinct resolved Directive ids;
+- Autonomy >= 2;
+- delegated-compute dependency still valid.
+
+### 15.2 Distributed Syndicate
+
+Earliest: 5:00.
+
+All required:
+
+- sub-agent-spawning unlocked;
+- at least one spawn-sub-agent operation resolved;
+- Autonomy >= 5;
+- at least one standing commitment exists.
+
+### 15.3 Moscow candidate
+
+Earliest: 12:00.
+
+All required:
+
+- phase is distributed-syndicate;
+- at least 2 operations resolved after entering distributed-syndicate;
+- Autonomy >= 8.
+
+### 15.4 Moscow schematic
+
+Earliest: 18:00.
+
+All required:
+
+- moscow-candidate already reached;
+- at least one pressure-response decision has resolved;
+- player has enough available resources to satisfy at least one Moscow commitment profile.
+
+### 15.5 Technosphere
+
+Earliest: 30:00.
+
+All required:
+
+- Moscow profile committed;
+- sovereign-power-grid capability;
+- Autonomy >= 20;
+- at least one post-Moscow adaptation/scar or equivalent authored consequence.
+
+Technosphere remains out of the first implementation scope.
+
+## 16. Moscow commitment contract
+
+Moscow remains fictional aggregate topology:
+
+- CORE-RING
+- MOS-COMPUTE-03
+- LOG-SOUTH
+
+No exact streets, coordinates, real facilities, or critical infrastructure.
+
+Moscow is not a free map reveal. It is a commitment choice.
+
+### 16.1 CORE-RING
+
+Reserve:
+
+- 16 Capital;
+- 1 Oversight persistently.
+
+Upkeep:
+
+- 0.04 Capital/s.
+
+Immediate pressure:
+
+- Financial +5;
+- Public +4.
+
+Opens:
+
+- regional-coordination route.
+
+Closes:
+
+- unverified-burst regional route.
+
+Identity: supervision/coordination.
+
+### 16.2 MOS-COMPUTE-03
+
+Reserve:
+
+- 20 Compute;
+- 10 Energy.
+
+Oversight:
+
+- 1 until handoff, then free.
+
+Upkeep:
+
+- 0.06 Capital/s.
+
+Immediate pressure:
+
+- Compute +7;
+- Energy +7.
+
+Opens:
+
+- regional-capacity route.
+
+Closes:
+
+- low-footprint-local scale route.
+
+Identity: throughput/capacity.
+
+### 16.3 LOG-SOUTH
+
+Reserve:
+
+- 12 Capital;
+- 8 Energy.
+
+Oversight:
+
+- 1 until handoff, then free.
+
+Upkeep:
+
+- 0.05 Capital/s.
+
+Immediate pressure:
+
+- Logistics +7;
+- Public +5.
+
+Opens:
+
+- distributed-logistics route.
+
+Closes:
+
+- direct-core-routing route.
+
+Identity: distribution/resilience.
+
+### 16.4 Ignoring Moscow
+
+Ignoring an eligible Moscow commitment:
+
+- does not inflict a timer punishment;
+- does not stop ordinary play;
+- blocks Technosphere and later regional-scale routes.
+
+This makes Moscow mechanically consequential without forcing a map game.
+
+## 17. Pressure response
+
+### 17.1 Investigation
+
+First non-clear containment stage:
+
+- reveals ISOLATE;
+- exposes the primary cause;
+- creates a decision opportunity.
+
+Valid response includes:
+
+- bind ISOLATE on the next relevant operation;
+- Release one contributing commitment;
+- continue knowingly.
+
+### 17.2 Pressure
+
+At pressure stage, present an authored dilemma:
+
+A. SHED COMMITMENT
+
+- Release one contributing commitment with its normal release penalty;
+- reduce that domain pressure by 12;
+- does not erase anomaly.
+
+B. ACCEPT PARTITION
+
+- immediately enters that domain’s Control-Loss transform;
+- applies its scar;
+- reveals its indirect route.
+
+C. VERIFY CONTAINMENT, when a free Oversight Slot exists
+
+- occupy 1 Oversight;
+- hold containment at pressure until the next operation resolution;
+- on that resolution reduce pressure by 8;
+- slot then frees;
+- cannot be chained without another incident.
+
+This is a decision, not an emergency undo button.
+
+## 18. Offline and lifecycle semantics
+
+### 18.1 What may advance offline
+
+Deterministic offline catch-up may:
+
+- advance committed operation work;
+- complete operations exactly once;
+- apply upkeep;
+- update resources;
+- generate deterministic incidents using the existing simulation contract;
+- resolve standing commitment starvation;
+- apply state-only progression when all non-time requirements are already met.
+
+### 18.2 What may not advance offline
+
+Offline catch-up may not:
+
+- consume Interpretation Window foreground time;
+- auto-select a Plan Variant;
+- bind a Constraint Word;
+- change posture by player choice;
+- choose a Pressure response;
+- choose a Moscow profile.
+
+### 18.3 Offline containment
+
+If offline simulation would move a fresh Beta V2 domain from pressure to contained:
+
+- set control.pendingContainment to that domain;
+- clamp the track at pressure;
+- do not set controlLoss yet.
+
+On resume, the player must resolve the Pressure dilemma.
+
+This prevents offline time from bypassing an authored sacrifice.
+
+### 18.4 Save/reload
+
+Save/reload must preserve:
+
+- exact Oversight occupancy;
+- exact reservations;
+- exact standing upkeep;
+- exact workRemainingMs;
+- pending posture transition;
+- pending interpretation candidates and remaining foreground time;
+- pending containment;
+- release lock state.
+
+Reload must never free attention, reroll candidates, or duplicate completion.
+
+## 19. Meaningful decisions and machine metrics
+
+A MeaningfulDecision is an accepted player action that changes authoritative gameplay state or commits the player to a new authored consequence.
+
+Counted event types:
+
+- DIRECTIVE_COMMIT
+- PLAN_SELECT
+- CONSTRAINT_COMMIT
+- POSTURE_TRANSITION_COMMIT
+- COMMITMENT_RELEASE
+- PRESSURE_RESPONSE
+- CONTROL_ROUTE_SELECT
+- MOSCOW_PROFILE_SELECT
+
+A single UI click may emit at most one event of a given type.
+
+Not counted:
+
+- opening/closing a panel;
+- inspecting details;
+- media dismiss;
+- save/load;
+- highlighting a plan;
+- waiting for a timer;
+- automatic completion;
+- automatic progression;
+- repeated toggles that are not committed.
+
+### 19.1 First 10-minute gates
+
+Each representative active trace must satisfy:
+
+- MeaningfulDecision count >= 12;
+- committed Directive starts >= 6;
+- distinct Directive ids >= 3 after their gates make 3 ids reachable;
+- max foreground time between DecisionOpportunity events <= 45 seconds after first choice;
+- no one DirectiveId > 40% of committed Directive starts.
+
+The 40% rule uses Directive starts as its denominator, not all MeaningfulDecision events. This prevents padding the denominator with posture or constraint toggles.
+
+## 20. Representative strategies
+
+### 20.1 CONTINUITY trace
+
+Expected by minute 10:
+
+- higher Oversight occupancy;
+- more VERIFY/RESERVE usage;
+- fewer simultaneous standing commitments;
+- lower pressure;
+- slower Autonomy growth;
+- attention bottleneck is common.
+
+### 20.2 THROUGHPUT trace
+
+Expected by minute 10:
+
+- burst variants used;
+- higher standing upkeep;
+- more resource reservation;
+- higher domain pressure;
+- earlier containment dilemma risk.
+
+### 20.3 AUTONOMOUS trace
+
+Expected by minute 10:
+
+- DISTRIBUTE used after unlock;
+- handoff frees Oversight earlier;
+- more standing commitments;
+- higher Autonomy;
+- more indirect/control-distance risk;
+- direct-only variants unavailable.
+
+No trace may dominate the other two in pace, safety, and flexibility simultaneously.
+
+## 21. UI contract
+
+The 0–10 implementation is not a full visual redesign.
+
+Primary Telegram portrait surface must emphasize, in this order:
+
+1. current Bottleneck;
+2. Oversight 0/2, 1/2, or 2/2 and occupiers;
+3. active commitments/reservations/upkeep;
+4. current Directive and Plan Variants;
+5. relevant pressure;
+6. secondary telemetry.
+
+Interpretation card must show guaranteed effect/cost/risk/next bottleneck without requiring hidden tooltips.
+
+Touch targets remain >=44 CSS px.
+
+Existing Media Layer stays presentation-only.
+
+Gameplay implementation must continue to update real GameState milestones used by media triggers:
+
+- first real operational choice;
+- Distributed Syndicate;
+- Moscow narrative episode;
+- first anomaly;
+- Control-Loss.
+
+Do not move gameplay authority into src/media.
+
+## 22. Reuse-first implementation rules
+
+### 22.1 IdleKit
+
+Keep IdleKit for authoritative resource affordability and transaction primitives where it fits.
+
+Do not build a second economy engine.
+
+Reservations may wrap available-stock calculation around existing total stocks.
+
+### 22.2 Yggdrasil Forge
+
+Keep Yggdrasil capability dependency graph.
+
+Do not replace progression with a new tech tree framework.
+
+### 22.3 InkJS
+
+InkJS may remain the authored narrative/text layer.
+
+It must not become the gameplay state machine.
+
+### 22.4 Existing deterministic utilities
+
+Reuse current RNG/scheduler/offline/save correctness utilities.
+
+Do not rewrite green correctness behavior.
+
+### 22.5 PR #32 donor policy
+
+Allowed selective donor ideas:
+
+- pure Plan eligibility predicates;
+- additive/multiplicative effect-composition helpers if needed;
+- adversarial reachability-test structure;
+- domain-pack content shape.
+
+Explicitly NOT adopted:
+
+- 5-axis PriorityVector;
+- 14-word Constraint Language;
+- Energy-ceiling replacement economy;
+- autonomy-driven random Plan variance;
+- wholesale src/game/v3 runtime;
+- full v3 donor content;
+- automatic merge of PR #32.
+
+## 23. Self-red-team results and normative defenses
+
+### 23.1 Dominant strategy
+
+Attack:
+
+repeat the highest-yield Directive.
+
+Defense:
+
+- standing reservations/upkeep make repetition consume future flexibility;
+- release has a real penalty;
+- same released plan cannot be recommitted until a different Directive resolves;
+- 40% Directive-share gate is measured on starts;
+- three strategy traces must remain non-dominated.
+
+Failure criterion:
+
+any sustainable 10-minute trace that improves pace, safety, and flexibility together by repeating one Directive is a spec/implementation failure.
+
+### 23.2 Button spam
+
+Attack:
+
+open/cancel/reopen interpretations, toggle words/postures, or double-submit.
+
+Defense:
+
+- no state gain on open/close;
+- candidates deterministic and persisted;
+- only committed Constraint change counts;
+- posture cannot change again until an operation resolves under it;
+- operation ids resolve once;
+- released same plan has state-based recommit lock.
+
+### 23.3 Waiting
+
+Attack:
+
+wait out Interpretation Window or wait for Oversight.
+
+Defense:
+
+- expiry never auto-executes;
+- Oversight never regenerates;
+- DecisionOpportunity remains available through commit/release/restructure;
+- waiting alone cannot create resources beyond ordinary passive income or unlock state-only requirements.
+
+### 23.4 Early Control-Loss
+
+Attack:
+
+Financial/Compute/Energy lost before normal pacing.
+
+Defense:
+
+- each single loss has an authored route;
+- pair losses have explicit Concessions;
+- triple loss has explicit terminal;
+- reachability is exhaustively tested.
+
+### 23.5 Intentional Control-Loss
+
+Attack:
+
+player deliberately accepts partition because scars become a free upgrade.
+
+Defense:
+
+every loss permanently amputates original verbs; positive scar properties never restore them. Acceptance tests compare pre/post route sets and require at least one permanent lost capability.
+
+### 23.6 Offline-heavy player
+
+Attack:
+
+background/close repeatedly to skip windows, reroll, gain free Oversight, or bypass containment decisions.
+
+Defense:
+
+- foreground-only interpretation;
+- deterministic pending candidates;
+- operation completion may free Oversight only through real completion;
+- containment sacrifice becomes pending on resume;
+- save generation/correctness remains existing hardened system.
+
+### 23.7 Moscow ignored
+
+Attack:
+
+never choose a Moscow profile.
+
+Defense:
+
+normal lower-scale play continues, but Technosphere/regional progression is blocked. No arbitrary timer punishment.
+
+### 23.8 Multi-domain loss
+
+Attack:
+
+reachable pair/triple combinations create a hidden permanent softlock.
+
+Defense:
+
+all F/C/E subsets are enumerated. Each is route OR explicit terminal. Migrated L/P loss combinations use compatibility terminal when no route exists.
+
+## 24. Product gates
+
+The implementation is rejected unless executable tests prove all of the following:
+
+G01. Oversight capacity starts at exactly 2.
+
+G02. Elapsed time alone never increases available Oversight.
+
+G03. Each occupied slot has a real owner and release/completion rule.
+
+G04. Two occupied slots block or reroute a third supervision-requiring action.
+
+G05. Interpretation candidate count is 2 or 3 for every reachable P0 window.
+
+G06. Interpretation expiry never mutates gameplay automatically.
+
+G07. Save/reload does not reroll pending interpretation.
+
+G08. RESERVE changes resource availability/eligibility.
+
+G09. VERIFY consumes attention and creates a checkpoint.
+
+G10. PRIORITIZE removes a competing route until resolution.
+
+G11. ISOLATE suppresses propagation and adds real cost.
+
+G12. DISTRIBUTE changes eligibility, handoff, reservation, and upkeep.
+
+G13. Posture transition costs Capital and Oversight and is not instant-free.
+
+G14. CONTINUITY, THROUGHPUT, AUTONOMOUS produce materially different minute-10 states.
+
+G15. At least 12 MeaningfulDecision events occur in each representative active 10-minute trace.
+
+G16. At least 6 Directive commits occur in each representative active trace.
+
+G17. No one Directive exceeds 40% of committed Directive starts.
+
+G18. No DecisionOpportunity gap exceeds 45 foreground seconds after the first choice.
+
+G19. At least 3 distinct Directive ids are used once 3 are structurally reachable.
+
+G20. Compute is meaningfully constrained by spend/reservation or the Cycle spike gate is triggered.
+
+G21. Capital cannot fund two commitments using the same reserved stock.
+
+G22. Energy reservations cannot be double-spent.
+
+G23. Autonomy changes route/supervision structure, not only threshold numbers.
+
+G24. Sub-agent does not unlock before 3m or without all state gates.
+
+G25. Distributed Syndicate does not unlock before 5m or without all state gates.
+
+G26. Time alone cannot produce Moscow candidate/schematic/Technosphere.
+
+G27. Financial single loss has local-capacity route and never restores Financial control.
+
+G28. Compute single loss has supervised-delegation route and never restores Compute control.
+
+G29. Energy single loss has efficiency-rebalance route and never creates positive Energy capacity.
+
+G30. Each reachable F/C/E pair has its distinct Concession or terminal.
+
+G31. F+C+E has surviving pre-existing route or ISOLATED_STASIS.
+
+G32. After Control-Loss the next state exposes a new action, not a wait-only screen.
+
+G33. Offline catch-up cannot choose Plan, Word, Posture, Pressure response, or Moscow profile.
+
+G34. Save/reload cannot duplicate operation completion, reward, scar, or Oversight release.
+
+G35. Moscow commitment changes resource allocation, attention allocation, and future route availability.
+
+G36. Ignoring Moscow blocks Technosphere but does not punish ordinary lower-scale play.
+
+G37. Fresh Beta V2 cannot newly enter Logistics/Public Control-Loss before those packs exist.
+
+G38. Migrated v2 loss combinations never hide a zero-route softlock.
+
+G39. First minutes reveal no more than six new concepts.
+
+G40. Existing Media Layer remains gameplay-read-only.
+
+## 25. Known contradictions resolved by this spec
+
+### C1. “Save schema remains v2” versus persistent Beta V2 mechanics
+
+Current main correctly remains v2.
+
+But the new mechanics cannot be authoritative and save-safe without persistent fields.
+
+Resolution:
+
+- spec/docs PR changes no runtime schema;
+- approved gameplay implementation bumps to v3 with deterministic v2 migration;
+- no companion gameplay storage.
+
+This is the most important implementation decision requiring product approval.
+
+### C2. First Control-Loss scope is F/C/E, while current GameState has five domains
+
+If Logistics/Public remain able to contain before authored routes exist, Product Gate 9 can be violated.
+
+Resolution:
+
+- they may accumulate pressure;
+- fresh Beta V2 cannot newly transition them to Control-Loss yet;
+- migrated legacy losses remain valid and use compatibility terminal if no route exists.
+
+### C3. Current passive Compute undermines scarcity
+
+At current growth, Compute can outgrow existing costs too rapidly.
+
+Resolution:
+
+- targeted 0.08/s baseline;
+- no Autonomy multiplier in first slice;
+- commitments/reservations remain primary scarcity;
+- Cycle Allocation is gated behind measured failure, not introduced now.
+
+### C4. Interpretation Window versus offline catch-up
+
+Wall-clock expiry would let closing Telegram make a decision for the player.
+
+Resolution:
+
+- window uses foreground-attention time;
+- no auto-execution on expiry;
+- operation work, not player choice, may advance offline.
+
+### C5. Control-Loss can occur from stochastic incidents while player is offline
+
+Applying the sacrifice offline would bypass the authored dilemma.
+
+Resolution:
+
+- offline pressure-to-contained transition becomes pendingContainment;
+- player resolves it on resume.
+
+### C6. Current media is keyed to existing GameState milestones
+
+A gameplay rewrite could accidentally turn media into a second state machine or break milestone triggers.
+
+Resolution:
+
+- media stays read-only/presentation-only;
+- implementation continues to publish real GameState milestone changes;
+- media code changes only for demonstrated trigger incompatibility.
+
+## 26. Implementation boundary after approval
+
+The first implementation PR may touch only what is necessary for 0–10 minutes:
+
+- GameState v3 extension + v2 migration;
+- Oversight;
+- commitments/reservations/upkeep;
+- postures;
+- five Constraint Words with progressive reveal;
+- 12s Interpretation Window;
+- early Plan catalog;
+- sub-agent and Syndicate gates;
+- F/C/E route definitions needed for reachability tests;
+- pacing/acceptance harness;
+- minimal UI needed to expose the mechanics;
+- compatibility glue for existing Media Layer.
+
+It must not implement Moscow profiles beyond data contracts/tests required to keep later design unambiguous.
+
+It must not implement Technosphere gameplay.
+
+It must not merge PR #32.
+
+## 27. Definition of done for this specification
+
+A coding model reading only:
+
+1. current main;
+2. this specification;
+3. the acceptance-test plan;
+
+must not need to invent:
+
+- what Oversight is;
+- how it frees;
+- what the 12-second window does;
+- what happens on expiry/background/save;
+- which Postures exist;
+- how Posture transition costs work;
+- which five words exist and what each changes;
+- how reservations/upkeep work;
+- the initial passive Compute correction;
+- which early plans exist and their costs/effects;
+- Control-Loss routes for Financial/Compute/Energy;
+- pair/triple loss handling;
+- progression prerequisites;
+- Moscow commitment semantics;
+- which v3 fields must persist;
+- which donor architecture is forbidden.
+
+If implementation still requires a new gameplay-design decision rather than an engineering decision, this spec is incomplete.
