@@ -91,7 +91,7 @@ h1 { margin: 0; font-size: clamp(26px, 7vw, 40px); font-weight: 540; letter-spac
 .directive-card { border-left: 2px solid #55c8b7; background: #081516; padding: 13px; margin-top: 10px; }
 .directive-card p { margin: 0 0 8px; font-size: 12px; line-height: 1.5; }
 .choices, .actions { gap: 8px; flex-wrap: wrap; }
-button { border: 1px solid #28534f; background: #0a1c1c; color: #bce8df; padding: 10px 12px; border-radius: 3px; cursor: pointer; }
+button { min-height: 44px; border: 1px solid #28534f; background: #0a1c1c; color: #bce8df; padding: 10px 12px; border-radius: 3px; cursor: pointer; }
 button:hover { border-color: #59bfb1; color: #effffb; }
 button:disabled { opacity: .42; cursor: not-allowed; filter: saturate(.45); }
 button.primary { background: #12302e; border-color: #4da99d; }
@@ -137,4 +137,34 @@ button.primary { background: #12302e; border-color: #4da99d; }
 @media (max-width: 520px) {
   .resource-grid, .directive-grid { grid-template-columns: repeat(2, 1fr); }
   .persistence-panel { align-items: flex-start; flex-direction: column; }
+}
+
+
+/* Gameplay Beta V2: compact proof of opportunity cost, not a redesign. */
+.beta-kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.beta-kpis article { border: 1px solid #21423f; padding: 10px; min-width: 0; }
+.beta-kpis span, .occupancy-chip, .commitment-card span, .commitment-card small, .plan-card span, .plan-card small { color: #719b95; font-size: 10px; }
+.beta-kpis strong, .commitment-card strong { display: block; margin-top: 6px; color: #e5fff8; font-size: 12px; }
+.beta-kpis small { display: block; margin-top: 5px; color: #5f8882; font-size: 9px; }
+.occupancy-list, .posture-actions, .word-row { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 10px; }
+.occupancy-chip { border: 1px solid #3f5244; padding: 6px 8px; background: #101712; }
+.commitment-card { display: grid; grid-template-columns: 1fr auto; gap: 8px 12px; align-items: center; padding: 10px; border: 1px solid #24403d; margin-top: 8px; }
+.commitment-card small { grid-column: 1 / -1; }
+.commitment-card button { grid-column: 2; grid-row: 1; }
+.muted { color: #587873; font-size: 11px; }
+.interpretation-card { border-left-width: 3px; }
+.word-row button.selected { border-color: #7de4d3; background: #12302e; color: #effffb; }
+.plan-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+.plan-card { min-height: 150px; text-align: left; display: flex; flex-direction: column; align-items: flex-start; gap: 7px; }
+.plan-card strong { color: #e8fff9; }
+.plan-card small { margin-top: auto; }
+.pressure-choice { border: 1px solid #65483f; padding: 10px; margin-top: 8px; }
+.terminal-state { border-color: #8b4943; }
+.failed { color: #ff837c; }
+button.danger, .danger { border-color: #7b4540; color: #ff9c95; }
+
+@media (max-width: 520px) {
+  .beta-kpis, .plan-grid { grid-template-columns: 1fr; }
+  .commitment-card { grid-template-columns: 1fr; }
+  .commitment-card button { grid-column: 1; grid-row: auto; }
 }
