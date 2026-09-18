@@ -355,7 +355,7 @@ function postureAllowsPlan(state: GameState, plan: PlanDefinition, word: Constra
   if (posture === "AUTONOMOUS" && hasTag(plan, "direct-only") && !hasTag(plan, "slow-control")) return true;
 
   // Once DISTRIBUTE language is unlocked, one authored distributed alternative
-  // remains visible before binding so the opening window still exposes a real
+  // remains visible before binding so the opening interpretation still exposes a real
   // topology tradeoff rather than a single forced choice. Binding DISTRIBUTE
   // then removes the direct alternative.
   if (
@@ -589,6 +589,7 @@ export function commitPlan(state: GameState, planId: string): BetaActionResult {
 
   state.betaV2.interpretation = null;
   state.directives.lastDirectiveId = plan.directiveId;
+  state.directives.humanApprovalRequired = false;
   state.directives.executed += 1;
   state.narrative.lastChoice = plan.directiveId;
   state.betaV2.progress.meaningfulDecisions += 1;
