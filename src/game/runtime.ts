@@ -196,6 +196,21 @@ export class ConvergenceRuntime {
     this.narrative = null;
     this.state.narrative.lastChoice = interpretation.effectId;
 
+    // Preserve the hardened B-03 approval-cycle invariant as narrative
+    // metadata. This does not advance Beta V2 operation/progression counters.
+    if (interpretation.effectId === "require-human-approval") {
+      if (!this.state.directives.humanApprovalRequired) {
+        this.state.directives.executed += 1;
+        this.state.anomaly.public = Math.max(0, this.state.anomaly.public - 3);
+        this.state.anomaly.financial = Math.max(0, this.state.anomaly.financial - 1);
+      }
+      this.state.directives.humanApprovalRequired = true;
+      this.state.directives.lastDirectiveId = interpretation.effectId;
+      this.appendLog("decision", "Human approval constraint recorded in narrative state.");
+      this.publish();
+      return { ok: true, effectId: interpretation.effectId, failures: [], text: interpretation.text };
+    }
+
     if (interpretation.effectId === "reserve-compute") {
       const pending = openInterpretation(this.state, "reserve-compute");
       if (pending) {
