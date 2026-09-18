@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { Scheduler } from "../game/engine/scheduler";
 import { createInitialGameState } from "../game/model";
+import { advanceSimulation } from "../game/simulation";
 import {
   loadSnapshot,
   saveSnapshot,
@@ -127,5 +128,20 @@ describe("additional production-correctness hardening", () => {
 
     await Promise.all([firstSave, secondSave]);
     expect((await loadSnapshot(store))?.resources.capital).toBe(2);
+  });
+
+  it("B-04 · time floors use the simulated cursor, not raw wall time", () => {
+    const state = createInitialGameState(0, 7);
+    state.meta.phase = "distributed-syndicate";
+    state.capabilities["sovereign-power-grid"] = true;
+    state.resources.autonomy = 20;
+
+    advanceSimulation(state, {
+      currentTime: 30 * 60_000,
+      deltaMs: 30 * 60_000,
+    });
+
+    expect(state.meta.updatedAt).toBe(60_000);
+    expect(state.meta.phase).toBe("distributed-syndicate");
   });
 });
