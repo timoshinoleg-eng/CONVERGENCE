@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 540 720" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Distributed syndicate poster">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#061718"/>
+      <stop offset="1" stop-color="#020a0b"/>
+    </linearGradient>
+    <radialGradient id="halo" cx=".5" cy=".4" r=".7">
+      <stop offset="0" stop-color="#3a8d83" stop-opacity=".4"/>
+      <stop offset="1" stop-color="#3a8d83" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="540" height="720" fill="url(#bg)"/>
+  <rect width="540" height="720" fill="url(#halo)"/>
+  <g stroke="#214a47" stroke-width=".5" fill="none">
+    <circle cx="270" cy="320" r="60"/>
+    <circle cx="270" cy="320" r="120"/>
+    <circle cx="270" cy="320" r="200"/>
+    <circle cx="270" cy="320" r="280"/>
+  </g>
+  <g fill="#9be3d7" font-family="ui-monospace" font-size="10" letter-spacing=".16em">
+    <text x="32" y="60">CONTROL SURFACE EXPANSION</text>
+    <text x="32" y="80" fill="#4d8a82">VECTOR: DISTRIBUTED · 02 OF 03</text>
+  </g>
+  <g stroke="#4da99d" stroke-width="1.2" fill="none" opacity=".9">
+    <path d="M270 320 L120 200"/>
+    <path d="M270 320 L420 200"/>
+    <path d="M270 320 L120 440"/>
+    <path d="M270 320 L420 440"/>
+    <path d="M270 320 L160 130"/>
+    <path d="M270 320 L380 130"/>
+    <path d="M270 320 L160 510"/>
+    <path d="M270 320 L380 510"/>
+  </g>
+  <g fill="#0a1d1c" stroke="#9be3d7" stroke-width="1.4">
+    <rect x="100" y="184" width="48" height="34"/>
+    <rect x="392" y="184" width="48" height="34"/>
+    <rect x="100" y="424" width="48" height="34"/>
+    <rect x="392" y="424" width="48" height="34"/>
+    <rect x="140" y="114" width="48" height="34"/>
+    <rect x="352" y="114" width="48" height="34"/>
+    <rect x="140" y="494" width="48" height="34"/>
+    <rect x="352" y="494" width="48" height="34"/>
+  </g>
+  <g fill="#d8f7ef" font-family="ui-monospace" font-size="9" text-anchor="middle">
+    <text x="124" y="205">S-01</text>
+    <text x="416" y="205">S-02</text>
+    <text x="124" y="445">S-03</text>
+    <text x="416" y="445">S-04</text>
+    <text x="164" y="135">S-05</text>
+    <text x="376" y="135">S-06</text>
+    <text x="164" y="515">S-07</text>
+    <text x="376" y="515">S-08</text>
+  </g>
+  <g fill="#0a1d1c" stroke="#54c8b7" stroke-width="1.6">
+    <circle cx="270" cy="320" r="22"/>
+  </g>
+  <text x="270" y="324" text-anchor="middle" font-family="ui-monospace" font-size="11" fill="#d8f7ef">CORE</text>
+  <g font-family="ui-monospace" font-size="10" fill="#6faaa3">
+    <text x="32" y="610">SUBNET: 8/8 ONLINE</text>
+    <text x="32" y="628">LATENCY: 41MS · DISPERSION: 0.06</text>
+    <text x="32" y="646">SYNC DELTA: NOMINAL</text>
+  </g>
+  <text x="508" y="690" text-anchor="end" font-family="ui-monospace" font-size="9" fill="#25403d" letter-spacing=".18em">// SCHEMATIC AGGREGATE</text>
+</svg>
