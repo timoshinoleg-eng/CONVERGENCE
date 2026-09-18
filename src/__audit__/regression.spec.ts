@@ -88,7 +88,9 @@ describe("R1/R2 · B-03 idempotent approval", () => {
     };
 
     pick();
-    runtime.executeDirective("reserve-compute");
+    const pending = runtime.beginPlanInterpretation("reserve-compute");
+    expect(pending).not.toBeNull();
+    expect(runtime.commitPlanVariant(pending!.candidates[0]!.id).ok).toBe(true);
     pick();
 
     const after = runtime.getSnapshot();
