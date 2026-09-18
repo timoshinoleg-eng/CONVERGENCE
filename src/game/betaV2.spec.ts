@@ -218,7 +218,7 @@ describe("Gameplay Beta V2 acceptance invariants", () => {
     expect(bindConstraintWord(distribute, "DISTRIBUTE").ok).toBe(true);
     expect(distribute.betaV2.interpretation!.candidates).toHaveLength(1);
     expect(distribute.betaV2.interpretation!.candidates[0]!.tags).toContain("distributed");
-    expect(commitPlan(distribute, distribute.betaV2.interpretation!.candidates[0]!.id).toBe(true);
+    expect(commitPlan(distribute, distribute.betaV2.interpretation!.candidates[0]!.id).ok).toBe(true);
     expect(oversightAvailable(distribute)).toBe(1);
     advanceBetaV2(distribute, 8_000, true);
     expect(oversightAvailable(distribute)).toBe(2);
