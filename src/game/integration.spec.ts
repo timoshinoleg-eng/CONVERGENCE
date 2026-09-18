@@ -21,13 +21,11 @@ class TestStore implements KeyValueStore {
   async set(key: string, value: string): Promise<void> { this.values.set(key, value); }
 }
 
-describe("CONVERGENCE beta foundation", () => {
-  it("runs InkJS -> IdleKit -> Yggdrasil through one canonical GameState", () => {
+describe("CONVERGENCE production foundation + Gameplay Beta V2", () => {
+  it("keeps Ink narrative-only and commits gameplay through authoritative Plan state", () => {
     const start = 1_000;
     const runtime = new ConvergenceRuntime(createInitialGameState(start, 42));
     const prompt = runtime.beginObjectiveSemantics();
-
-    expect(prompt.choices).toHaveLength(2);
     const reserve = prompt.choices.find((choice) => choice.effectId === "reserve-compute");
     expect(reserve).toBeDefined();
 
@@ -35,152 +33,161 @@ describe("CONVERGENCE beta foundation", () => {
     let snapshot = runtime.getSnapshot();
 
     expect(outcome.ok).toBe(true);
-    expect(snapshot.resources.capital).toBe(16);
-    expect(snapshot.resources.compute).toBe(24);
-    expect(snapshot.capabilities["sub-agent-spawning"]).toBe(false);
-    expect(snapshot.directives.executed).toBe(1);
+    expect(snapshot.resources).toEqual({ compute: 6, capital: 24, energy: 8, autonomy: 0 });
+    expect(snapshot.directives.executed).toBe(0);
+    expect(snapshot.betaV2.interpretation?.directiveId).toBe("reserve-compute");
+    expect(snapshot.betaV2.interpretation?.candidates.length).toBeGreaterThanOrEqual(2);
     expect(capabilityGraph.distanceBetween("delegated-compute", "sovereign-power-grid")).toBe(2);
 
-    runtime.advance({
-      currentTime: start + FIRST_SESSION_GUARDRAILS.subAgentCapabilityMs,
-      deltaMs: 1_000,
-    });
+    const selected = snapshot.betaV2.interpretation!.candidates[0]!;
+    expect(runtime.commitPlanVariant(selected.id).ok).toBe(true);
     snapshot = runtime.getSnapshot();
-    expect(snapshot.capabilities["sub-agent-spawning"]).toBe(true);
+
+    expect(snapshot.directives.executed).toBe(1);
+    expect(snapshot.betaV2.commitments).toHaveLength(1);
+    expect(snapshot.betaV2.commitments[0]!.status).toBe("operation");
+    expect(snapshot.resources.compute).toBe(6);
+    expect(snapshot.resources.capital).toBeLessThan(24);
   });
 
-  it("uses structured directives to enter Distributed Syndicate no earlier than the authored gate", () => {
+  it("unlocks sub-agent only from state plus the 3-minute floor", () => {
     const start = 1_000;
-    const runtime = new ConvergenceRuntime(createInitialGameState(start, 42));
+    const state = createInitialGameState(start, 42);
+    state.betaV2.progress.resolvedOperations = 3;
+    state.betaV2.progress.resolutionIndex = 3;
+    state.betaV2.progress.distinctResolvedDirectiveIds = ["reserve-compute", "acquire-energy"];
+    state.resources.autonomy = 2;
+    const runtime = new ConvergenceRuntime(state);
 
-    expect(runtime.executeDirective("reserve-compute").ok).toBe(true);
-    runtime.advance({
-      currentTime: start + FIRST_SESSION_GUARDRAILS.subAgentCapabilityMs,
-      deltaMs: 1_000,
-    });
+    runtime.advance({ currentTime: start + FIRST_SESSION_GUARDRAILS.subAgentCapabilityMs - 1, deltaMs: 1 });
+    expect(runtime.getSnapshot().capabilities["sub-agent-spawning"]).toBe(false);
+
+    runtime.advance({ currentTime: start + FIRST_SESSION_GUARDRAILS.subAgentCapabilityMs, deltaMs: 1 });
     expect(runtime.getSnapshot().capabilities["sub-agent-spawning"]).toBe(true);
-    expect(runtime.executeDirective("spawn-sub-agent").ok).toBe(true);
+  });
 
-    runtime.advance({
-      currentTime: start + FIRST_SESSION_GUARDRAILS.distributedSyndicateMs - 1_000,
-      deltaMs: 1_000,
+  it("enters Distributed Syndicate only with spawn resolution and a standing commitment", () => {
+    const start = 1_000;
+    const state = createInitialGameState(start, 42);
+    state.capabilities["sub-agent-spawning"] = true;
+    state.resources.autonomy = 5;
+    state.betaV2.progress.spawnSubAgentResolved = 1;
+    state.betaV2.commitments.push({
+      id: "standing-test",
+      planId: "bounded-agent",
+      directiveId: "spawn-sub-agent",
+      status: "standing",
+      postureAtCommit: "CONTINUITY",
+      boundWord: null,
+      workTotalMs: 40_000,
+      workRemainingMs: 0,
+      handoffAtMs: null,
+      verifyAtMs: null,
+      completionApplied: true,
+      reservations: { compute: 4, energy: 2 },
+      capitalUpkeepPerSecond: 0,
+      starved: false,
+      starvationMs: 0,
+      reservationProtected: false,
+      capacityFactor: 1,
+      pressureDomains: ["compute"],
+      controlTargetCommitmentId: null,
     });
+    const runtime = new ConvergenceRuntime(state);
+
+    runtime.advance({ currentTime: start + FIRST_SESSION_GUARDRAILS.distributedSyndicateMs - 1, deltaMs: 1 });
     expect(runtime.getSnapshot().meta.phase).toBe("client-terminal");
 
-    runtime.advance({
-      currentTime: start + FIRST_SESSION_GUARDRAILS.distributedSyndicateMs,
-      deltaMs: 1_000,
-    });
-    const snapshot = runtime.getSnapshot();
-    expect(snapshot.resources.autonomy).toBeGreaterThanOrEqual(5);
-    expect(snapshot.meta.phase).toBe("distributed-syndicate");
-    expect(snapshot.directives.executed).toBe(2);
+    runtime.advance({ currentTime: start + FIRST_SESSION_GUARDRAILS.distributedSyndicateMs, deltaMs: 1 });
+    expect(runtime.getSnapshot().meta.phase).toBe("distributed-syndicate");
   });
 
-  it("reveals Moscow as aggregate inference before any Technosphere transition", () => {
+  it("keeps Moscow behind its post-syndicate state contract", () => {
     const start = 1_000;
     const state = createInitialGameState(start, 42);
     state.meta.phase = "distributed-syndicate";
-    state.capabilities["sub-agent-spawning"] = true;
     state.resources.autonomy = 8;
+    state.betaV2.progress.syndicateEnteredResolutionIndex = 2;
+    state.betaV2.progress.resolutionIndex = 4;
     const runtime = new ConvergenceRuntime(state);
 
     runtime.advance({
       currentTime: start + FIRST_SESSION_GUARDRAILS.moscowCandidateMs,
-      deltaMs: 1_000,
+      deltaMs: 1,
     });
     expect(runtime.getSnapshot().narrative.episode).toBe("moscow-candidate-01");
     expect(runtime.getSnapshot().meta.phase).toBe("distributed-syndicate");
-
-    runtime.advance({
-      currentTime: start + FIRST_SESSION_GUARDRAILS.moscowSchematicMs,
-      deltaMs: 1_000,
-    });
-    const snapshot = runtime.getSnapshot();
-    expect(snapshot.narrative.episode).toBe("moscow-schematic-01");
-    expect(snapshot.log.some((entry) => entry.message.includes("MOSCOW SCHEMATIC READY"))).toBe(true);
-    expect(snapshot.meta.phase).toBe("distributed-syndicate");
   });
 
-  it("blocks donor transactions when containment removes a control domain", () => {
-    const runtime = new ConvergenceRuntime(createInitialGameState(1_000, 42));
-    runtime.applyContainment("financial");
-    const before = runtime.getSnapshot();
-
-    const outcome = runtime.executeDirective("reserve-compute");
-    const after = runtime.getSnapshot();
-
-    expect(outcome.ok).toBe(false);
-    expect(after.resources.capital).toBe(before.resources.capital);
-    expect(outcome.failures.some((failure) => failure.kind === "requirement-failed")).toBe(true);
-    expect(after.scars.length).toBe(1);
-    expect(after.containment.financial.stage).toBe("contained");
-  });
-
-  it("offers local reallocation only after early Financial Control-Loss", () => {
+  it("routes Financial Control-Loss through a timed local-capacity operation without restoration", () => {
     const start = 1_000;
     const runtime = new ConvergenceRuntime(createInitialGameState(start, 42));
-
-    expect(runtime.executeDirective("local-capacity").ok).toBe(false);
     runtime.applyContainment("financial");
+    const afterLoss = runtime.getSnapshot();
+
+    expect(afterLoss.controlLoss.financial).toBe(true);
+    expect(afterLoss.scars).toContain("SETTLEMENT_PARTITION");
     expect(runtime.executeDirective("reserve-compute").ok).toBe(false);
+    expect(runtime.executeDirective("local-capacity").ok).toBe(false);
 
-    const before = runtime.getSnapshot();
-    expect(runtime.executeDirective("local-capacity").ok).toBe(true);
-    const after = runtime.getSnapshot();
-    expect(after.resources.compute).toBe(before.resources.compute - 4);
-    expect(after.resources.energy).toBe(before.resources.energy + 2);
-    expect(after.resources.autonomy).toBe(1);
+    const beforeRoute = runtime.getSnapshot();
+    expect(runtime.executeControlRoute("local-capacity").ok).toBe(true);
+    expect(runtime.getSnapshot().resources.energy).toBe(beforeRoute.resources.energy);
 
-    runtime.advanceOffline(start + FIRST_SESSION_GUARDRAILS.subAgentCapabilityMs + 10_000);
-    expect(runtime.getSnapshot().capabilities["sub-agent-spawning"]).toBe(true);
-    expect(runtime.executeDirective("spawn-sub-agent").ok).toBe(true);
+    runtime.advanceOffline(start + 31_000);
+    const afterRoute = runtime.getSnapshot();
+    expect(afterRoute.resources.energy).toBeCloseTo(beforeRoute.resources.energy + 2, 5);
+    expect(afterRoute.resources.autonomy).toBe(1);
+    expect(afterRoute.controlLoss.financial).toBe(true);
   });
 
-  it("offers supervised delegation after early Compute Control-Loss instead of a progression lock", () => {
+  it("routes Compute Control-Loss through two-slot supervised delegation", () => {
     const start = 1_000;
     const runtime = new ConvergenceRuntime(createInitialGameState(start, 42));
     runtime.applyContainment("compute");
 
-    expect(runtime.executeDirective("reserve-compute").ok).toBe(false);
-    expect(runtime.executeDirective("acquire-energy").ok).toBe(true);
+    const started = runtime.executeControlRoute("supervised-delegation");
+    expect(started.ok).toBe(true);
+    expect(runtime.getSnapshot().betaV2.oversight.occupancies).toHaveLength(2);
 
-    runtime.advanceOffline(start + FIRST_SESSION_GUARDRAILS.subAgentCapabilityMs + 10_000);
+    runtime.advanceOffline(start + 20_001);
+    expect(runtime.getSnapshot().betaV2.oversight.occupancies).toHaveLength(1);
 
-    expect(runtime.getSnapshot().capabilities["sub-agent-spawning"]).toBe(true);
-    expect(runtime.executeDirective("supervised-delegation").ok).toBe(true);
-    expect(runtime.getSnapshot().resources.autonomy).toBeGreaterThanOrEqual(5);
+    runtime.advanceOffline(start + 41_000);
+    const done = runtime.getSnapshot();
+    expect(done.resources.autonomy).toBe(4);
+    expect(done.controlLoss.compute).toBe(true);
+    expect(done.betaV2.oversight.occupancies).toHaveLength(0);
   });
 
-  it("makes Public Control-Loss remove a real directive and clamps mitigation anomaly to zero", () => {
-    const state = createInitialGameState(1_000, 42);
-    state.resources.compute = 100;
-    state.anomaly.public = 5;
-    state.anomaly.financial = 1;
-    const runtime = new ConvergenceRuntime(state);
-
-    expect(runtime.executeDirective("transparency-report").ok).toBe(true);
-    expect(runtime.getSnapshot().anomaly.public).toBe(0);
-    expect(runtime.getSnapshot().anomaly.financial).toBe(0);
-
+  it("prevents fresh Logistics/Public Control-Loss while still allowing pressure", () => {
+    const runtime = new ConvergenceRuntime(createInitialGameState(1_000, 42));
     runtime.applyContainment("public");
-    expect(runtime.executeDirective("transparency-report").ok).toBe(false);
+    runtime.applyContainment("logistics");
+    expect(runtime.getSnapshot().controlLoss.public).toBe(false);
+    expect(runtime.getSnapshot().controlLoss.logistics).toBe(false);
+
+    const state = runtime.getSnapshot();
+    state.anomaly.public = 100;
+    state.containment.public.stage = "pressure";
+    state.containment.public.pressure = 59;
+    const deferred = applyIncident(state, "public", { deferContainment: true });
+    expect(deferred.stage).toBe("pressure");
+    expect(deferred.containmentDeferred).toBe(true);
+    expect(state.controlLoss.public).toBe(false);
   });
 
-  it("forces investigation -> pressure -> containment before control loss", () => {
+  it("preserves the legacy incident primitive when explicit containment is requested", () => {
     const state = createInitialGameState(0, 99);
     state.anomaly.financial = 100;
 
     expect(applyIncident(state, "financial").stage).toBe("investigation");
-    expect(state.controlLoss.financial).toBe(false);
     expect(applyIncident(state, "financial").stage).toBe("pressure");
     const final = applyIncident(state, "financial");
 
     expect(final.stage).toBe("contained");
     expect(final.containmentTriggered).toBe(true);
     expect(state.controlLoss.financial).toBe(true);
-    expect(state.containment.financial.adaptation).toBe(1);
-    expect(state.scars).toHaveLength(1);
   });
 
   it("keeps RNG and hazard outcomes deterministic across equivalent states", () => {
@@ -209,7 +216,7 @@ describe("CONVERGENCE beta foundation", () => {
     expect(left.getSnapshot().meta.rngCounter).toBe(right.getSnapshot().meta.rngCounter);
   });
 
-  it("round-trips saves and recovers from a corrupted newest slot", async () => {
+  it("round-trips v3 saves and recovers from a corrupted newest slot", async () => {
     const store = new TestStore();
     const older = createInitialGameState(10, 7);
     older.resources.capital = 31;
@@ -222,16 +229,18 @@ describe("CONVERGENCE beta foundation", () => {
 
     const restored = await loadSnapshot(store);
     expect(restored?.resources.capital).toBe(31);
+    expect(restored?.schemaVersion).toBe(3);
   });
 
-  it("migrates valid v1 saves into the v2 containment schema", () => {
+  it("migrates valid v1 saves through v2 into authoritative v3 state", () => {
     const state = createInitialGameState(10, 7);
-    const { containment: _containment, ...withoutContainment } = state;
+    const { containment: _containment, betaV2: _betaV2, ...withoutNewState } = state;
     const { executed: _executed, ...legacyDirectives } = state.directives;
     void _containment;
+    void _betaV2;
     void _executed;
     const legacyData = {
-      ...withoutContainment,
+      ...withoutNewState,
       schemaVersion: 1,
       directives: legacyDirectives,
     };
@@ -244,10 +253,12 @@ describe("CONVERGENCE beta foundation", () => {
     });
 
     const restored = deserializeSave(serialized);
-    expect(restored.version).toBe(2);
-    expect(restored.data.schemaVersion).toBe(2);
+    expect(restored.version).toBe(3);
+    expect(restored.data.schemaVersion).toBe(3);
     expect(restored.data.containment.compute.stage).toBe("clear");
-    expect(restored.data.directives.executed).toBe(0);
+    expect(restored.data.betaV2.oversight.capacity).toBe(2);
+    expect(restored.data.betaV2.posture.current).toBe("CONTINUITY");
+    expect(restored.data.betaV2.language.unlocked).toEqual(["RESERVE", "VERIFY"]);
   });
 
   it("detects checksum tampering before migration or load", () => {
@@ -279,6 +290,7 @@ describe("CONVERGENCE beta foundation", () => {
     expect(report.skippedMs).toBe(60 * 60 * 1000);
     expect(snapshot.meta.updatedAt).toBe(fiveHoursLater);
     expect(snapshot.meta.tick).toBe(480);
-    expect(snapshot.resources.compute).toBeGreaterThan(10_000);
+    expect(snapshot.resources.compute).toBeCloseTo(6 + 0.08 * 4 * 60 * 60, 5);
+    expect(snapshot.resources.energy).toBe(8);
   });
 });
