@@ -154,6 +154,28 @@ function attemptPosture(
   return requested;
 }
 
+function attemptRecoveryRelease(
+  runtime: ConvergenceRuntime,
+  policy: RepresentativePolicy,
+  directive: BetaDirectiveId,
+): boolean {
+  if (directive !== "acquire-energy") return false;
+  const state = runtime.getSnapshot();
+  const releaseOrder = policy === "THROUGHPUT"
+    ? ["balanced-capacity", "burst-allocation"]
+    : policy === "AUTONOMOUS"
+      ? ["balanced-capacity"]
+      : [];
+
+  for (const planId of releaseOrder) {
+    const target = state.betaV2.commitments.find(
+      (commitment) => commitment.status === "standing" && commitment.planId === planId,
+    );
+    if (target && runtime.release(target.id).ok) return true;
+  }
+  return false;
+}
+
 function attemptNextPlan(
   runtime: ConvergenceRuntime,
   policy: RepresentativePolicy,
@@ -231,7 +253,14 @@ export function runRepresentativeTrace(
 
     if (sequenceIndex < DIRECTIVE_SEQUENCE.length) {
       const directive = DIRECTIVE_SEQUENCE[sequenceIndex]!;
-      if (attemptNextPlan(runtime, policy, directive)) sequenceIndex += 1;
+      if (attemptNextPlan(runtime, policy, directive)) {
+        sequenceIndex += 1;
+      } else if (sequenceIndex >= 4) {
+        // High-throughput standing upkeep and the autonomous transition can
+        // deliberately exhaust Capital headroom. Use the authored Release
+        // transition rather than inventing income or changing catalog costs.
+        attemptRecoveryRelease(runtime, policy, directive);
+      }
     }
 
     const beforeAdvance = runtime.getSnapshot();
