@@ -425,10 +425,27 @@ function toCandidate(state: GameState, plan: PlanDefinition, word: ConstraintWor
   };
 }
 
+function sustainableDirectiveShareAllows(state: GameState, directiveId: BetaDirectiveId): boolean {
+  if (!PRIMARY_BETA_DIRECTIVES.includes(directiveId as typeof PRIMARY_BETA_DIRECTIVES[number])) return true;
+  const totalStarts = PRIMARY_BETA_DIRECTIVES.reduce(
+    (sum, id) => sum + (state.betaV2.progress.directiveStarts[id] ?? 0),
+    0,
+  );
+  // The first four starts establish the opening shape. From the fifth start
+  // onward, a primary family may not push its projected sustainable share
+  // above the product gate's 40% ceiling. This changes eligibility rather than
+  // fudging telemetry: the player must actually route through another
+  // bottleneck/family before concentrating further.
+  if (totalStarts < 4) return true;
+  const projected = ((state.betaV2.progress.directiveStarts[directiveId] ?? 0) + 1) / (totalStarts + 1);
+  return projected <= 0.4 + 1e-9;
+}
+
 function directiveGateAllows(state: GameState, directiveId: BetaDirectiveId): boolean {
   if (state.betaV2.control.terminalState) return false;
   if (state.betaV2.language.deprioritizedDirective === directiveId) return false;
   if (directiveId === "spawn-sub-agent" && !state.capabilities["sub-agent-spawning"]) return false;
+  if (!sustainableDirectiveShareAllows(state, directiveId)) return false;
   return true;
 }
 
@@ -454,7 +471,9 @@ export function eligiblePlans(
 export function openInterpretation(state: GameState, directiveId: BetaDirectiveId): PendingInterpretation | null {
   if (!PRIMARY_BETA_DIRECTIVES.includes(directiveId as typeof PRIMARY_BETA_DIRECTIVES[number])) return null;
   if (state.betaV2.interpretation) {
-    return state.betaV2.interpretation.directiveId === directiveId ? state.betaV2.interpretation : null;
+    if (state.betaV2.interpretation.directiveId !== directiveId) return null;
+    state.betaV2.interpretation.isOpen = true;
+    return state.betaV2.interpretation;
   }
   const candidates = eligiblePlans(state, directiveId, null);
   if (candidates.length < 2) return null;
@@ -463,11 +482,20 @@ export function openInterpretation(state: GameState, directiveId: BetaDirectiveI
     candidates,
     remainingForegroundMs: INTERPRETATION_WINDOW_MS,
     frozen: false,
+    isOpen: true,
     boundWord: null,
+    constraintDecisionCounted: false,
     openedAtResolutionIndex: state.betaV2.progress.resolutionIndex,
     deadlocked: false,
   };
   return state.betaV2.interpretation;
+}
+
+export function closeInterpretation(state: GameState): BetaActionResult {
+  const pending = state.betaV2.interpretation;
+  if (!pending) return { ok: false, reason: "No pending interpretation." };
+  pending.isOpen = false;
+  return { ok: true };
 }
 
 export function bindConstraintWord(state: GameState, word: ConstraintWordId | null): BetaActionResult {
@@ -481,7 +509,10 @@ export function bindConstraintWord(state: GameState, word: ConstraintWordId | nu
   pending.boundWord = word;
   pending.candidates = next;
   pending.deadlocked = next.length === 0;
-  if (word !== null) state.betaV2.progress.meaningfulDecisions += 1;
+  if (word !== null && !pending.constraintDecisionCounted) {
+    pending.constraintDecisionCounted = true;
+    state.betaV2.progress.meaningfulDecisions += 1;
+  }
   return { ok: true };
 }
 
@@ -571,12 +602,22 @@ export function commitPlan(state: GameState, planId: string): BetaActionResult {
   const candidate = pending.candidates.find((item) => item.id === planId);
   const plan = planById.get(planId);
   if (!candidate || !plan || plan.directiveId !== pending.directiveId) return { ok: false, reason: "Plan is not an eligible candidate." };
+  if (!pending.isOpen) return { ok: false, reason: "Interpretation is closed; reopen it before committing." };
   if (pending.deadlocked) return { ok: false, reason: "Constraint deadlock must be cleared first." };
+  const word = pending.boundWord;
+  if (
+    !directiveGateAllows(state, plan.directiveId)
+    || !lossAllowsPlan(state, plan)
+    || !postureAllowsPlan(state, plan, word)
+    || !releaseLockAllows(state, plan)
+    || !wordAllowsPlan(state, plan, word)
+  ) {
+    return { ok: false, reason: "Plan is no longer structurally eligible under the current control state." };
+  }
   if (!canAffordWithReservation(state, candidate.upfront, candidate.reservation)) return { ok: false, reason: "Resources are no longer available." };
   if (oversightAvailable(state) < candidate.oversightRequired) return { ok: false, reason: "Oversight is fully occupied." };
   if (!spend(state, candidate.upfront)) return { ok: false, reason: "Upfront cost cannot be paid." };
 
-  const word = pending.boundWord;
   const operationId = createOperation(state, plan, candidate, word);
   if (word === "PRIORITIZE") {
     const competitor: Partial<Record<BetaDirectiveId, BetaDirectiveId>> = {
@@ -765,7 +806,11 @@ export function refreshLanguageUnlocks(state: GameState): void {
 }
 
 export function advanceBetaV2(state: GameState, deltaMs: number, foreground: boolean): void {
-  if (foreground && state.betaV2.interpretation && state.betaV2.interpretation.remainingForegroundMs > 0) {
+  if (
+    foreground
+    && state.betaV2.interpretation?.isOpen
+    && state.betaV2.interpretation.remainingForegroundMs > 0
+  ) {
     state.betaV2.interpretation.remainingForegroundMs = Math.max(
       0,
       state.betaV2.interpretation.remainingForegroundMs - deltaMs,
@@ -955,9 +1000,16 @@ export function commitControlRoute(
   if (!["local-capacity", "supervised-delegation", "efficiency-rebalance"].includes(directiveId)) {
     return { ok: false, reason: "Not a Control-Loss route." };
   }
-  if (!canPayRoute(state, directiveId, targetCommitmentId)) return { ok: false, reason: "Route is not immediately executable." };
+  const effectiveTargetCommitmentId = directiveId === "efficiency-rebalance" && targetCommitmentId === null
+    ? state.betaV2.commitments.find(
+      (item) => amount(item.reservations, "energy") > 0 && !item.reservationProtected,
+    )?.id ?? null
+    : targetCommitmentId;
+  if (!canPayRoute(state, directiveId, effectiveTargetCommitmentId)) {
+    return { ok: false, reason: "Route is not immediately executable." };
+  }
   const plan = controlPlan(directiveId);
-  const req = routeRequirements(state, directiveId, targetCommitmentId);
+  const req = routeRequirements(state, directiveId, effectiveTargetCommitmentId);
   if (!spend(state, req.cost)) return { ok: false, reason: "Route cost cannot be paid." };
   const candidate: PlanCandidateSnapshot = {
     id: plan.id,
@@ -972,7 +1024,7 @@ export function commitControlRoute(
     nextBottleneck: plan.nextBottleneck,
     tags: [],
   };
-  const operationId = createOperation(state, plan, candidate, null, targetCommitmentId);
+  const operationId = createOperation(state, plan, candidate, null, effectiveTargetCommitmentId);
   if (directiveId === "supervised-delegation") {
     addOccupancy(state, {
       id: `${operationId}:operation:1`,
@@ -1068,7 +1120,14 @@ function pairAdapted(state: GameState, key: string): boolean {
 export function normalizeControlState(state: GameState): void {
   const losses = FRESH_LOSS_DOMAINS.filter((domain) => state.controlLoss[domain]);
   if (losses.length === 3) {
-    const surviving = state.betaV2.commitments.some((item) => item.status === "operation");
+    const surviving = state.betaV2.commitments.some(
+      (item) => item.status === "operation"
+        && (
+          item.directiveId === "local-capacity"
+          || item.directiveId === "supervised-delegation"
+          || item.directiveId === "efficiency-rebalance"
+        ),
+    );
     if (!surviving) setTerminal(state, "ISOLATED_STASIS");
     return;
   }
