@@ -233,10 +233,13 @@ async function resetGame(): Promise<void> {
         <p>Current control surface has no authored immediately executable continuation. Load another save or reset the beta run.</p>
       </div>
 
-      <div v-else-if="game.pendingInterpretation" class="directive-card interpretation-card">
+      <div v-else-if="game.pendingInterpretation?.isOpen" class="directive-card interpretation-card">
         <div class="panel-heading">
           <span>{{ game.pendingInterpretation.directiveId }}</span>
-          <strong>{{ (game.pendingInterpretation.remainingForegroundMs / 1000).toFixed(1) }}s</strong>
+          <div class="actions compact">
+            <strong>{{ (game.pendingInterpretation.remainingForegroundMs / 1000).toFixed(1) }}s</strong>
+            <button @click="game.closePlanInterpretation">Close</button>
+          </div>
         </div>
         <div class="word-row">
           <button
@@ -247,7 +250,7 @@ async function resetGame(): Promise<void> {
           >{{ word }}</button>
         </div>
         <p v-if="game.pendingInterpretation.deadlocked" class="failed">
-          Constraint deadlock: unbind the word or leave this interpretation. Nothing auto-executes.
+          Constraint deadlock: unbind the word or close this interpretation. Nothing auto-executes.
         </p>
         <div class="plan-grid">
           <button
@@ -271,13 +274,21 @@ async function resetGame(): Promise<void> {
       </div>
 
       <div v-else class="actions directive-launchers">
-        <button class="primary" @click="game.beginPlanDirective('reserve-compute')">Interpret · Reserve compute</button>
-        <button class="primary" @click="game.beginPlanDirective('acquire-energy')">Interpret · Acquire energy</button>
-        <button
-          class="primary"
-          :disabled="!game.snapshot.capabilities['sub-agent-spawning']"
-          @click="game.beginPlanDirective('spawn-sub-agent')"
-        >Interpret · Spawn sub-agent</button>
+        <template v-if="game.pendingInterpretation">
+          <button class="primary" @click="game.reopenPlanInterpretation">
+            Resume · {{ game.pendingInterpretation.directiveId }}
+          </button>
+          <small>Frozen candidates and remaining foreground time are preserved.</small>
+        </template>
+        <template v-else>
+          <button class="primary" @click="game.beginPlanDirective('reserve-compute')">Interpret · Reserve compute</button>
+          <button class="primary" @click="game.beginPlanDirective('acquire-energy')">Interpret · Acquire energy</button>
+          <button
+            class="primary"
+            :disabled="!game.snapshot.capabilities['sub-agent-spawning']"
+            @click="game.beginPlanDirective('spawn-sub-agent')"
+          >Interpret · Spawn sub-agent</button>
+        </template>
       </div>
 
       <p v-if="game.betaStatus" class="outcome">{{ game.betaStatus }}</p>
@@ -345,6 +356,26 @@ async function resetGame(): Promise<void> {
       <div class="actions">
         <button v-for="action in game.controlActions" :key="action" @click="runControlAction(action)">
           {{ action }}
+        </button>
+      </div>
+    </section>
+
+    <section v-if="game.legacyDirectives.length" class="panel directive-panel">
+      <div class="panel-heading">
+        <span>LATER-SCOPE DIRECTIVES</span>
+        <small>LEGACY SURFACE PRESERVED</small>
+      </div>
+      <div class="directive-grid">
+        <button
+          v-for="directive in game.legacyDirectives"
+          :key="directive.id"
+          class="directive-button"
+          :disabled="!directive.available"
+          @click="game.executeDirective(directive.id)"
+        >
+          <strong>{{ directive.label }}</strong>
+          <span>{{ directive.summary }}</span>
+          <small v-if="!directive.available">CONSTRAINTS PREVENT EXECUTION</small>
         </button>
       </div>
     </section>
