@@ -85,12 +85,17 @@ export class ConvergenceRuntime {
       return { ...outcome, text: [...interpretation.text, ...outcome.text] };
     }
 
+    // B-03: the reward is applied once per active human-approval constraint cycle.
+    // Re-picking the same interpretation is idempotent; clearing the flag
+    // requires a real (resource-costing) directive via executeDirective().
+    if (!this.state.directives.humanApprovalRequired) {
+      this.state.directives.executed += 1;
+      this.state.anomaly.public = Math.max(0, this.state.anomaly.public - 3);
+      this.state.anomaly.financial = Math.max(0, this.state.anomaly.financial - 1);
+    }
     this.state.directives.humanApprovalRequired = true;
     this.state.directives.lastDirectiveId = interpretation.effectId;
-    this.state.directives.executed += 1;
     this.state.narrative.lastChoice = interpretation.effectId;
-    this.state.anomaly.public = Math.max(0, this.state.anomaly.public - 3);
-    this.state.anomaly.financial = Math.max(0, this.state.anomaly.financial - 1);
     this.appendLog("decision", "Human approval constraint added to the objective.");
     this.publish();
     return { ok: true, effectId: interpretation.effectId, failures: [], text: interpretation.text };
@@ -243,3 +248,4 @@ export class ConvergenceRuntime {
     for (const listener of this.listeners) listener(snapshot);
   }
 }
+
