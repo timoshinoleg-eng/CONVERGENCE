@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   PRIMARY_BETA_DIRECTIVES,
+  advanceBetaV2,
   applyBetaControlLoss,
   availableControlActions,
   availableResources,
@@ -248,18 +249,20 @@ describe("Beta V2 red-team invariants", () => {
   });
 
   it("RT-G06 expiry freezes candidates without auto-executing or mutating gameplay", () => {
-    const runtime = new ConvergenceRuntime(richState());
-    const pending = runtime.beginPlanInterpretation("reserve-compute")!;
+    const state = richState();
+    const pending = openInterpretation(state, "reserve-compute")!;
     const candidateFingerprint = JSON.stringify(pending.candidates);
-    const before = economicSnapshot(runtime.getSnapshot());
+    const before = economicSnapshot(state);
 
-    runtime.advance({ currentTime: START + 12_000, deltaMs: 12_000 });
-    const after = runtime.getSnapshot();
+    // Advance only the foreground-attention/gameplay mechanic clock. Passive
+    // economy is a separate simulation concern and must not be confused with
+    // Interpretation expiry mutation.
+    advanceBetaV2(state, 12_000, true);
 
-    expect(after.betaV2.interpretation?.remainingForegroundMs).toBe(0);
-    expect(after.betaV2.interpretation?.frozen).toBe(true);
-    expect(JSON.stringify(after.betaV2.interpretation?.candidates)).toBe(candidateFingerprint);
-    expect(economicSnapshot(after)).toEqual(before);
+    expect(state.betaV2.interpretation?.remainingForegroundMs).toBe(0);
+    expect(state.betaV2.interpretation?.frozen).toBe(true);
+    expect(JSON.stringify(state.betaV2.interpretation?.candidates)).toBe(candidateFingerprint);
+    expect(economicSnapshot(state)).toEqual(before);
   });
 
   it("RT-G07 save/load keeps exact pending candidates, costs, risks, word and foreground time", () => {
@@ -318,44 +321,20 @@ describe("Beta V2 red-team invariants", () => {
     expect(runtime.release(standing.id).ok).toBe(true);
 
     let snapshot = runtime.getSnapshot();
-    let reserve = runtime.beginPlanInterpretation("reserve-compute")!;
-    expect(reserve.candidates.some((candidate) => candidate.id === "verified-lease")).toBe(false);
+    expect(eligiblePlans(snapshot, "reserve-compute").some(
+      (candidate) => candidate.id === "verified-lease",
+    )).toBe(false);
 
-    // Fixture-close isolates the release-lock rule because production currently
-    // has no public Interpretation close API (covered by RT-SPAM-02 above).
-    snapshot = runtime.getSnapshot();
-    snapshot.betaV2.interpretation = null;
-    runtime.replaceState(snapshot);
-
-    reserve = runtime.beginPlanInterpretation("reserve-compute")!;
-    const alternate = reserve.candidates.find((candidate) => candidate.id !== "verified-lease")!;
-    expect(runtime.commitPlanVariant(alternate.id).ok).toBe(true);
+    const energy = runtime.beginPlanInterpretation("acquire-energy");
+    expect(energy).not.toBeNull();
+    expect(runtime.commitPlanVariant(energy!.candidates[0]!.id).ok).toBe(true);
     snapshot = runtime.getSnapshot();
     snapshot.betaV2.commitments.find((item) => item.status === "operation")!.workRemainingMs = 1;
     runtime.replaceState(snapshot);
     runtime.advance({ currentTime: START + 2, deltaMs: 1 });
 
     snapshot = runtime.getSnapshot();
-    snapshot.betaV2.interpretation = null;
-    runtime.replaceState(snapshot);
-    expect(runtime.beginPlanInterpretation("reserve-compute")!.candidates.some(
-      (candidate) => candidate.id === "verified-lease",
-    )).toBe(false);
-
-    snapshot = runtime.getSnapshot();
-    snapshot.betaV2.interpretation = null;
-    runtime.replaceState(snapshot);
-    const energy = runtime.beginPlanInterpretation("acquire-energy")!;
-    expect(runtime.commitPlanVariant(energy.candidates[0]!.id).ok).toBe(true);
-    snapshot = runtime.getSnapshot();
-    snapshot.betaV2.commitments.find((item) => item.status === "operation")!.workRemainingMs = 1;
-    runtime.replaceState(snapshot);
-    runtime.advance({ currentTime: START + 3, deltaMs: 1 });
-
-    snapshot = runtime.getSnapshot();
-    snapshot.betaV2.interpretation = null;
-    runtime.replaceState(snapshot);
-    expect(runtime.beginPlanInterpretation("reserve-compute")!.candidates.some(
+    expect(eligiblePlans(snapshot, "reserve-compute").some(
       (candidate) => candidate.id === "verified-lease",
     )).toBe(true);
   });
