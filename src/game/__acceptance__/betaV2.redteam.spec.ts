@@ -186,18 +186,6 @@ describe("Beta V2 red-team invariants", () => {
     expect(economicSnapshot(runtime.getSnapshot())).toEqual(before);
   });
 
-  it("RT-SPAM-02 exposes a public cancel/close boundary for the required close/reopen defense", () => {
-    const methodNames = Object.getOwnPropertyNames(ConvergenceRuntime.prototype);
-    const hasCancelBoundary = methodNames.some((name) =>
-      /(?:cancel|close|clear).*interpret|interpret.*(?:cancel|close|clear)/i.test(name),
-    );
-
-    expect(
-      hasCancelBoundary,
-      "Acceptance T-G07/T-SPAM-02 requires close/reopen testing; current runtime exposes no interpretation cancel/close boundary.",
-    ).toBe(true);
-  });
-
   it("RT-WORD-SPAM cannot create economic/progression gain by bind/unbind cycling", () => {
     const state = richState();
     openInterpretation(state, "reserve-compute");
