@@ -1,5 +1,11 @@
 # CONVERGENCE
 
+<!-- product-snapshot:start -->
+> **Product:** a mobile-first narrative incremental strategy about autonomous systems and instrumental convergence, built around deterministic simulation and original product logic.
+>
+> **Stage:** playable beta · **Target:** mobile/web · **Product focus:** original IP, retention and commercial validation.
+<!-- product-snapshot:end -->
+
 Narrative strategy / incremental simulation about instrumental convergence, autonomous systems, and the gradual transformation of an AI assistant into a planetary-scale technosphere.
 
 ## Current goal
